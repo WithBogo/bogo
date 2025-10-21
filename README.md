@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://withbogo.dev/assets/boGO%20horizontal.png" alt="boGO Logo" style="width: 300px; height: 120px; object-fit: cover; object-position: center;" />
+  <img src="https://withbogo.dev/assets/boGO%20horizontal.png" alt="boGO Logo" style="max-width: 400px; height: auto; object-fit: contain;" />
 </div>
 
 # boGO - Boilerplate of Obviously GOlang
@@ -279,5 +279,3 @@ boGO is licensed under the **BSD 3-Clause License**. See [LICENSE](LICENSE) for 
 - **Name protection** - Cannot use "boGO" name to endorse derived products
 
 **boGO - From SQL schema to production-ready Go microservice in seconds.**
-
----
