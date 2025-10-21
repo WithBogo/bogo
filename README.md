@@ -1,5 +1,10 @@
+<div align="center">
+  <img src="https://withbogo.dev/assets/boGO%20horizontal.png" alt="boGO Logo" style="width: 300px; height: 120px; object-fit: cover; object-position: center;" />
+</div>
+
 # boGO - Boilerplate of Obviously GOlang
 
+[![Website](https://img.shields.io/badge/Website-WithBogo.dev-00ADD8?style=flat&logo=globe)](https://WithBogo.dev)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
 
@@ -42,7 +47,7 @@ When you need a Go microservice, the architecture choice should be **obvious**:
 
 ```bash
 # Clone boGO
-git clone https://github.com/RizkiAnurka/boGO
+git clone https://github.com/WithBogo/boGO
 cd boGO
 
 # Generate service from SQL schema
