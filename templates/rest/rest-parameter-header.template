@@ -1,9 +1,160 @@
 package rest
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"sync"
 
 	httpHelper "github.com/RizkiAnurka/go-library/http-helper"
 )
 
+// QueryConfig represents the JSON configuration for query parameters
+type QueryConfig struct {
+	Filter  []QueryField `json:"filter"`
+	Sorting []QueryField `json:"sorting"`
+}
+
+// QueryField represents a single query field configuration
+type QueryField struct {
+	DBKey     string      `json:"db_key"`
+	QueryKey  string      `json:"query_key"`
+	Kind      string      `json:"kind"`
+	Omitempty bool        `json:"omitempty,omitempty"`
+}
+
+// ToQueryInfo converts QueryField to httpHelper.QueryInfo
+func (qf QueryField) ToQueryInfo() httpHelper.QueryInfo {
+	var kind reflect.Kind
+	switch qf.Kind {
+	case "int64":
+		kind = reflect.Int64
+	case "float64":
+		kind = reflect.Float64
+	case "bool":
+		kind = reflect.Bool
+	default:
+		kind = reflect.String
+	}
+
+	return httpHelper.QueryInfo{
+		DBKey:     qf.DBKey,
+		QueryKey:  qf.QueryKey,
+		Kind:      kind,
+		Omitempty: qf.Omitempty,
+	}
+}
+
 var (
+	configCache = make(map[string]*QueryConfig)
+	cacheMutex  = sync.RWMutex{}
+	configDir   = "config/rest"
+)
+
+// SetConfigDirectory sets the directory where query config files are stored
+func SetConfigDirectory(dir string) {
+	configDir = dir
+}
+
+// loadConfigFromFile loads query configuration from a JSON file
+func loadConfigFromFile(entity string) (*QueryConfig, error) {
+	// Try multiple possible file locations
+	possiblePaths := []string{
+		filepath.Join(configDir, entity+".json"),
+		filepath.Join("config", "rest", entity+".json"),
+		filepath.Join("configs", "rest", entity+".json"),
+		filepath.Join("internal", "config", "rest", entity+".json"),
+		entity + "_query_config.json",
+	}
+
+	var lastErr error
+	for _, path := range possiblePaths {
+		if data, err := os.ReadFile(path); err == nil {
+			var config QueryConfig
+			if err := json.Unmarshal(data, &config); err != nil {
+				return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+			}
+			return &config, nil
+		} else {
+			lastErr = err
+		}
+	}
+
+	return nil, fmt.Errorf("config file not found for entity '%s' in any of the expected locations: %v (last error: %w)", 
+		entity, possiblePaths, lastErr)
+}
+
+// GetQueryConfig returns the query configuration for a given entity
+func GetQueryConfig(entity string) (*QueryConfig, error) {
+	// Check cache first
+	cacheMutex.RLock()
+	if config, exists := configCache[entity]; exists {
+		cacheMutex.RUnlock()
+		return config, nil
+	}
+	cacheMutex.RUnlock()
+
+	// Load from file
+	config, err := loadConfigFromFile(entity)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the result
+	cacheMutex.Lock()
+	configCache[entity] = config
+	cacheMutex.Unlock()
+
+	return config, nil
+}
+
+// ClearConfigCache clears the configuration cache
+func ClearConfigCache() {
+	cacheMutex.Lock()
+	configCache = make(map[string]*QueryConfig)
+	cacheMutex.Unlock()
+}
+
+// ReloadConfig reloads configuration for a specific entity
+func ReloadConfig(entity string) error {
+	// Remove from cache
+	cacheMutex.Lock()
+	delete(configCache, entity)
+	cacheMutex.Unlock()
+
+	// Load fresh from file
+	_, err := GetQueryConfig(entity)
+	return err
+}
+
+// GetFilterQuery returns filter QueryInfo slice for an entity
+func GetFilterQuery(entity string) ([]httpHelper.QueryInfo, error) {
+	config, err := GetQueryConfig(entity)
+	if err != nil {
+		return nil, err
+	}
+
+	var queryInfos []httpHelper.QueryInfo
+	for _, field := range config.Filter {
+		queryInfos = append(queryInfos, field.ToQueryInfo())
+	}
+
+	return queryInfos, nil
+}
+
+// GetSortingQuery returns sorting QueryInfo slice for an entity
+func GetSortingQuery(entity string) ([]httpHelper.QueryInfo, error) {
+	config, err := GetQueryConfig(entity)
+	if err != nil {
+		return nil, err
+	}
+
+	var queryInfos []httpHelper.QueryInfo
+	for _, field := range config.Sorting {
+		queryInfos = append(queryInfos, field.ToQueryInfo())
+	}
+
+	return queryInfos, nil
+}

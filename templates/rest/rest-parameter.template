@@ -1,5 +1,1 @@
-	<entity_snake>Filter = []httpHelper.QueryInfo{<filter_fields>
-	}
-
-	<entity_snake>Sorting = []httpHelper.QueryInfo{<sorting_fields>
-	}
+// Configuration file for <entity_snake> will be generated at: config/rest/<entity_snake>.json

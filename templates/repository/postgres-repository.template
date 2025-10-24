@@ -23,12 +23,17 @@ func New<repo_name>(db *gorm.DB) *<repo_name> {
 
 // Find retrieves <entity_name_plural> based on filter, sort, limit and offset parameters
 func (repo *<repo_name>) Find(ctx context.Context, filter map[string]any, sort map[string]any, limit, offset int) (<entity_name_plural> []model.<struct_name>, total int64, err error) {
+	filter["is_deleted"] = false
+	
 	counter := repo.db.Model(&model.<struct_name>{})
-	// TODO: Apply filtering logic
+	mysqlhelper.ApplySqlQuery(counter, filter)
 	counter.Count(&total)
 
 	result := repo.db.Limit(limit).Offset(offset)
-	// TODO: Apply sorting and filtering
+	if len(sort) > 0 {
+		mysqlhelper.ApplySorting(result, sort)
+	}
+	mysqlhelper.ApplySqlQuery(result, filter)
 	result.Find(&<entity_name_plural>)
 	err = result.Error
 	return
