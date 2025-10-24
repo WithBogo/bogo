@@ -23,7 +23,7 @@ func New<repo_name>(db *gorm.DB) *<repo_name> {
 
 // Find retrieves <entity_name_plural> based on filter, sort, limit and offset parameters
 func (repo *<repo_name>) Find(ctx context.Context, filter map[string]any, sort map[string]any, limit, offset int) (<entity_name_plural> []model.<struct_name>, total int64, err error) {
-	filter["is_deleted"]=false
+	filter["is_deleted"] = false
 	
 	counter := repo.db.Model(&model.<struct_name>{})
 	mysqlhelper.ApplySqlQuery(counter, filter)
