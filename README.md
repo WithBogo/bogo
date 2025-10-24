@@ -316,7 +316,7 @@ curl "http://localhost:8080/users?limit=10&offset=0"
 curl "http://localhost:8080/users?email=@example.com&name=john"
 
 # Sort users by multiple fields
-curl "http://localhost:8080/users?sort=name:asc,id:desc"
+curl "http://localhost:8080/users?sort=asc(name),desc(id)"
 
 # Create user
 curl -X POST http://localhost:8080/users \
