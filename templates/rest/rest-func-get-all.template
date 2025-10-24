@@ -22,7 +22,17 @@ func (h *<struct_name>Handler) GetAll<plural_name>(w http.ResponseWriter, r *htt
 		}
 	}
 
-	filters, err := httpHelper.ReadQuery(r, <entity_snake>Filter)
+	filterQuery, err := GetFilterQuery("<entity_snake>")
+	if err != nil {
+		log.Error("Failed to get filter config ", err.Error())
+		wrapper.Code = http.StatusInternalServerError
+		wrapper.Error = err.Error()
+		wrapper.Message = "Failed to get filter configuration"
+		wrapper.Respond(w)
+		return
+	}
+
+	filters, err := httpHelper.ReadQuery(r, filterQuery)
 	if err != nil {
 		log.Error("Failed to retrieve filters ", err.Error())
 		wrapper.Code = http.StatusBadRequest
@@ -31,7 +41,18 @@ func (h *<struct_name>Handler) GetAll<plural_name>(w http.ResponseWriter, r *htt
 		wrapper.Respond(w)
 		return
 	}
-	sortings := httpHelper.ReadSorting(r, <entity_snake>Sorting)
+
+	sortingQuery, err := GetSortingQuery("<entity_snake>")
+	if err != nil {
+		log.Error("Failed to get sorting config ", err.Error())
+		wrapper.Code = http.StatusInternalServerError
+		wrapper.Error = err.Error()
+		wrapper.Message = "Failed to get sorting configuration"
+		wrapper.Respond(w)
+		return
+	}
+
+	sortings := httpHelper.ReadSorting(r, sortingQuery)
 
 	<entity_plural>, total, err := h.service.Find(h.ctx, filters, sortings, limit, offset)
 	if err != nil {

@@ -124,6 +124,7 @@ go run ./cmd/user-service
 ```
 your-service/
 ├── cmd/your-service/           # Main application
+├── config/rest/               # JSON configuration files
 ├── internal/
 │   ├── application/            # Business logic & DTOs
 │   ├── domain/model/          # Domain entities
@@ -138,6 +139,7 @@ your-service/
 ## **What You Get**
 
 - **REST API**: Complete CRUD operations for all tables
+- **JSON Configuration**: Runtime-configurable query parameters and sorting
 - **Database**: PostgreSQL with GORM, migrations with Goose
 - **Architecture**: Clean hexagonal architecture with dependency inversion
 - **Validation**: Request validation and error handling
@@ -157,6 +159,128 @@ PUT    /tablename/:id   # Update record by ID
 DELETE /tablename/:id   # Delete record by ID
 GET    /health          # Health check endpoint
 ```
+
+## **JSON Configuration System**
+
+boGO uses a powerful JSON-based configuration system for REST API query parameters, providing runtime flexibility without recompilation.
+
+### **Configuration Workflow**
+
+```
+SQL Schema → Code Generation → JSON Config Files → Runtime Loading
+```
+
+When you generate a service, boGO automatically creates JSON configuration files for each entity:
+
+```
+your-service/
+├── config/rest/                    # JSON Configuration Files
+│   ├── user.json                  # Generated from users table
+│   ├── product.json               # Generated from products table
+│   └── ...
+├── internal/interactor/rest/       # REST Layer
+│   ├── rest_parameter.go          # Loads from config/rest/
+│   ├── user_handler.go            # Uses loaded config
+│   └── ...
+```
+
+### **Generated JSON Config Example**
+
+For a `users` table, boGO generates `config/rest/user.json`:
+
+```json
+{
+  "filter": [
+    {
+      "db_key": "id",
+      "query_key": "id",
+      "kind": "int64",
+      "omitempty": true
+    },
+    {
+      "db_key": "email",
+      "query_key": "email",
+      "kind": "string",
+      "omitempty": true
+    },
+    {
+      "db_key": "name",
+      "query_key": "name",
+      "kind": "string",
+      "omitempty": true
+    }
+  ],
+  "sorting": [
+    {
+      "db_key": "id",
+      "query_key": "id",
+      "kind": "int64"
+    },
+    {
+      "db_key": "email",
+      "query_key": "email",
+      "kind": "string"
+    },
+    {
+      "db_key": "name",
+      "query_key": "name",
+      "kind": "string"
+    }
+  ]
+}
+```
+
+### **Advanced Query Features**
+
+**Filter with multiple parameters:**
+```bash
+GET /users?name=john&email=@example.com&limit=10&offset=0
+```
+
+**Advanced filters:**
+```bash
+GET /users?name=like(john)&id=range(1,100)&limit=10&offset=0
+```
+supported command : range(a,b), in(array), like(string), not(string), gte(int), lte(int), gt(int), lt(int), not_in(string)
+
+**Sort by multiple fields:**
+```bash
+GET /users?sort=asc(name)
+```
+
+**Runtime configuration changes:**
+```bash
+# Edit config file - no restart required for new filters
+vim config/rest/user.json
+
+# Add new filterable field
+{
+  "db_key": "status",
+  "query_key": "status",
+  "kind": "string",
+  "omitempty": true
+}
+```
+
+### **SQL Type Mapping**
+
+boGO automatically maps SQL types to JSON configuration:
+
+| SQL Type | JSON Kind | Example Query |
+|----------|-----------|---------------|
+| `BIGINT`, `INTEGER` | `"int64"` | `?user_id=123` |
+| `DECIMAL`, `FLOAT` | `"float64"` | `?price=29.99` |
+| `BOOLEAN` | `"bool"` | `?active=true` |
+| `VARCHAR`, `TEXT` | `"string"` | `?name=john` |
+
+### **Configuration Benefits**
+
+✅ **Runtime Flexibility** - Modify query parameters without recompilation  
+✅ **Type Safety** - Automatic type conversion and validation  
+✅ **Performance** - Intelligent caching with thread-safe operations  
+✅ **Maintainability** - Human-readable JSON format  
+✅ **Version Control** - Easy to track configuration changes  
+✅ **Environment-Specific** - Different configs for dev/staging/prod  
 
 ## **Environment Variables**
 
@@ -187,6 +311,12 @@ CREATE TABLE users (
 ```bash
 # List users with pagination
 curl "http://localhost:8080/users?limit=10&offset=0"
+
+# Filter users by email and name (uses JSON config)
+curl "http://localhost:8080/users?email=@example.com&name=john"
+
+# Sort users by multiple fields
+curl "http://localhost:8080/users?sort=name:asc,id:desc"
 
 # Create user
 curl -X POST http://localhost:8080/users \
@@ -220,6 +350,7 @@ CREATE TABLE users (
 ### Output: Complete Microservice
 - **Hexagonal Architecture** with 4 layers
 - **REST API** with full CRUD operations  
+- **JSON Configuration** for runtime query customization
 - **PostgreSQL Integration** with migrations
 - **Docker Containerization** ready to deploy
 - **Testing Framework** with mockable interfaces

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -151,79 +154,112 @@ func generateRestHandler(moduleName string, table Table) string {
 	return handler.String()
 }
 
-// generateRestParameter creates the REST parameter file for filtering and sorting
-func generateRestParameter(tables []Table) string {
-	var allContent strings.Builder
-
+// generateRestParameter creates the REST parameter file and JSON config files
+func generateRestParameter(moduleName string, tables []Table) string {
 	// Add package header and imports using template
 	headerResult, err := processTemplate("rest-parameter-header", map[string]string{})
 	if err != nil {
 		panic(fmt.Sprintf("Error processing rest-parameter-header template: %v", err))
 	}
-	allContent.WriteString(headerResult)
 
-	// Generate filter and sorting variables for each table
-	for i, table := range tables {
+	// Generate JSON config files for each table
+	for _, table := range tables {
 		structName := toCamelCase(table.Name)
 		if strings.HasSuffix(structName, "s") {
 			structName = structName[:len(structName)-1]
 		}
 
 		entitySnake := strings.ToLower(structName)
-
-		// Generate filter fields
-		var filterFields strings.Builder
-		var sortingFields strings.Builder
-
-		// Add ID field first
-		filterFields.WriteString("\n\t\t{Omitempty: true, DBKey: \"id\", Kind: reflect.Int64, QueryKey: \"id\"},")
-		sortingFields.WriteString("\n\t\t{DBKey: \"id\", QueryKey: \"id\", Kind: reflect.Int64},")
-
-		// Add other fields
-		for _, col := range table.Columns {
-			if strings.ToLower(col.Name) == "id" ||
-				strings.ToLower(col.Name) == "created_at" ||
-				strings.ToLower(col.Name) == "updated_at" ||
-				strings.ToLower(col.Name) == "deleted_at" ||
-				strings.ToLower(col.Name) == "is_deleted" {
-				continue
-			}
-
-			reflectType := "reflect.String"
-			if col.GoType == "int64" {
-				reflectType = "reflect.Int64"
-			} else if col.GoType == "float64" {
-				reflectType = "reflect.Float64"
-			} else if col.GoType == "bool" {
-				reflectType = "reflect.Bool"
-			}
-
-			filterFields.WriteString(fmt.Sprintf("\n\t\t{Omitempty: true, DBKey: \"%s\", Kind: %s, QueryKey: \"%s\"},", col.Name, reflectType, col.Name))
-			sortingFields.WriteString(fmt.Sprintf("\n\t\t{DBKey: \"%s\", QueryKey: \"%s\", Kind: %s},", col.Name, col.Name, reflectType))
-		}
-
-		// Process template for this table
-		variables := map[string]string{
-			"entity_snake":   entitySnake,
-			"filter_fields":  filterFields.String(),
-			"sorting_fields": sortingFields.String(),
-		}
-
-		result, err := processTemplate("rest-parameter", variables)
-		if err != nil {
-			panic(fmt.Sprintf("Error processing rest-parameter template: %v", err))
-		}
-
-		allContent.WriteString(result)
-
-		// Add spacing between tables (except for the last one)
-		if i < len(tables)-1 {
-			allContent.WriteString("\n")
-		}
+		generateRestConfigFile(table, entitySnake, moduleName)
 	}
 
-	// Close the var block
-	allContent.WriteString("\n)\n")
+	return headerResult
+}
 
-	return allContent.String()
+// generateRestConfigFile creates a JSON configuration file for a specific entity
+func generateRestConfigFile(table Table, entitySnake string, moduleName string) {
+	type QueryField struct {
+		DBKey     string `json:"db_key"`
+		QueryKey  string `json:"query_key"`
+		Kind      string `json:"kind"`
+		Omitempty bool   `json:"omitempty,omitempty"`
+	}
+
+	type QueryConfig struct {
+		Filter  []QueryField `json:"filter"`
+		Sorting []QueryField `json:"sorting"`
+	}
+
+	var config QueryConfig
+
+	// Add ID field first
+	idField := QueryField{
+		DBKey:     "id",
+		QueryKey:  "id",
+		Kind:      "int64",
+		Omitempty: true,
+	}
+	config.Filter = append(config.Filter, idField)
+
+	idSortField := QueryField{
+		DBKey:    "id",
+		QueryKey: "id",
+		Kind:     "int64",
+	}
+	config.Sorting = append(config.Sorting, idSortField)
+
+	// Add other fields
+	for _, col := range table.Columns {
+		if strings.ToLower(col.Name) == "id" ||
+			strings.ToLower(col.Name) == "created_at" ||
+			strings.ToLower(col.Name) == "updated_at" ||
+			strings.ToLower(col.Name) == "deleted_at" ||
+			strings.ToLower(col.Name) == "is_deleted" {
+			continue
+		}
+
+		kindType := "string"
+		if col.GoType == "int64" {
+			kindType = "int64"
+		} else if col.GoType == "float64" {
+			kindType = "float64"
+		} else if col.GoType == "bool" {
+			kindType = "bool"
+		}
+
+		filterField := QueryField{
+			DBKey:     col.Name,
+			QueryKey:  col.Name,
+			Kind:      kindType,
+			Omitempty: true,
+		}
+		config.Filter = append(config.Filter, filterField)
+
+		sortField := QueryField{
+			DBKey:    col.Name,
+			QueryKey: col.Name,
+			Kind:     kindType,
+		}
+		config.Sorting = append(config.Sorting, sortField)
+	}
+
+	// Convert to pretty JSON
+	jsonData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		panic(fmt.Sprintf("Error marshaling config for %s: %v", entitySnake, err))
+	}
+
+	// Create config directory if it doesn't exist
+	configDir := filepath.Join(moduleName, "config", "rest")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		panic(fmt.Sprintf("Error creating config directory: %v", err))
+	}
+
+	// Write config file
+	configFile := filepath.Join(configDir, entitySnake+".json")
+	if err := os.WriteFile(configFile, jsonData, 0644); err != nil {
+		panic(fmt.Sprintf("Error writing config file %s: %v", configFile, err))
+	}
+
+	fmt.Printf("Created REST config: %s\n", configFile)
 }
