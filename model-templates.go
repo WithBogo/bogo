@@ -14,25 +14,16 @@ func generateDomainModel(table Table) string {
 
 	var fields strings.Builder
 
-	// Add MetaField if table doesn't have explicit ID
-	hasID := false
-	for _, col := range table.Columns {
-		if strings.ToLower(col.Name) == "id" {
-			hasID = true
-			break
-		}
-	}
-
-	if !hasID {
-		fields.WriteString("\tMetaField\n")
-	}
+	// MetaField always provides ID and the audit columns; the DTO layer relies on it
+	fields.WriteString("\tMetaField\n")
 
 	// Add table-specific fields
 	for _, col := range table.Columns {
 		fieldName := toCamelCase(col.Name)
 
 		// Skip meta fields if they're explicitly defined
-		if strings.ToLower(col.Name) == "created_at" ||
+		if strings.ToLower(col.Name) == "id" ||
+			strings.ToLower(col.Name) == "created_at" ||
 			strings.ToLower(col.Name) == "updated_at" ||
 			strings.ToLower(col.Name) == "deleted_at" ||
 			strings.ToLower(col.Name) == "is_deleted" {
@@ -151,6 +142,9 @@ func generateDTO(moduleName string, table Table) string {
 
 		fieldName := toCamelCase(col.Name)
 		jsonTag := fmt.Sprintf("`json:\"%s,omitempty\"`", strings.ToLower(col.Name))
+		if col.Validate != "" {
+			jsonTag = fmt.Sprintf("`json:\"%s,omitempty\" validate:\"%s\"`", strings.ToLower(col.Name), col.Validate)
+		}
 
 		fields.WriteString(fmt.Sprintf("\t%s %s %s\n", fieldName, col.GoType, jsonTag))
 
