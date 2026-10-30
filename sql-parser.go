@@ -24,6 +24,10 @@ type Column struct {
 	GoType       string
 	GormTag      string
 	JSONTag      string
+
+	// Foreign key target, set when the column REFERENCES another table
+	RefTable  string
+	RefColumn string
 }
 
 // parseSQLSchema parses SQL CREATE TABLE statements and extracts table information
@@ -37,6 +41,7 @@ func parseSQLSchema(filename string) ([]Table, error) {
 	var tables []Table
 	var currentTable *Table
 	var inTableDefinition bool
+	var pendingForeignKeys []foreignKey
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -62,6 +67,8 @@ func parseSQLSchema(filename string) ([]Table, error) {
 		// End of table definition
 		if inTableDefinition && strings.Contains(line, ");") {
 			if currentTable != nil {
+				applyForeignKeys(currentTable, pendingForeignKeys)
+				pendingForeignKeys = nil
 				tables = append(tables, *currentTable)
 				currentTable = nil
 			}
@@ -71,6 +78,11 @@ func parseSQLSchema(filename string) ([]Table, error) {
 
 		// Parse column definitions
 		if inTableDefinition && currentTable != nil {
+			if fk, ok := parseTableForeignKey(line); ok {
+				pendingForeignKeys = append(pendingForeignKeys, fk)
+				continue
+			}
+
 			column := parseColumnDefinition(line)
 			if column != nil {
 				currentTable.Columns = append(currentTable.Columns, *column)
@@ -131,6 +143,8 @@ func parseColumnDefinition(line string) *Column {
 	if strings.Contains(fullLine, "NOT NULL") {
 		column.IsNullable = false
 	}
+
+	parseInlineReference(column, line)
 
 	// Extract default value
 	defaultRegex := regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+)`)

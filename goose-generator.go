@@ -19,6 +19,9 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 		schemaCreation.WriteString(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS \"%s\";\n\n", schema))
 	}
 
+	// Create referenced tables first so FOREIGN KEY constraints can be resolved
+	tables = sortTablesByDependency(tables)
+
 	// Generate table creations
 	var tableCreations strings.Builder
 	var tableDrops strings.Builder
@@ -130,7 +133,7 @@ func generateCreateTable(table Table, schema string) string {
 	// Add table-specific columns
 	for _, col := range table.Columns {
 		sql.WriteString("    ")
-		sql.WriteString(generateColumnDefinition(col, table.Name))
+		sql.WriteString(generateColumnDefinition(col, table.Name, schema))
 		sql.WriteString(",\n")
 	}
 
@@ -156,7 +159,7 @@ func generateCreateTable(table Table, schema string) string {
 	sql.WriteString(");")
 	return sql.String()
 } // generateColumnDefinition generates SQL column definition
-func generateColumnDefinition(col Column, tableName string) string {
+func generateColumnDefinition(col Column, tableName, schema string) string {
 	var def strings.Builder
 
 	def.WriteString(col.Name)
@@ -185,6 +188,18 @@ func generateColumnDefinition(col Column, tableName string) string {
 	if col.DefaultValue != "" && !col.IsPrimaryKey {
 		def.WriteString(" DEFAULT ")
 		def.WriteString(col.DefaultValue)
+	}
+
+	if col.RefTable != "" {
+		refTable := col.RefTable
+		if schema != "" {
+			refTable = fmt.Sprintf("%s.%s", schema, refTable)
+		}
+		def.WriteString(" REFERENCES ")
+		def.WriteString(refTable)
+		if col.RefColumn != "" {
+			def.WriteString(fmt.Sprintf("(%s)", col.RefColumn))
+		}
 	}
 
 	return def.String()
