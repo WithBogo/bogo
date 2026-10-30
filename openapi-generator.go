@@ -90,6 +90,10 @@ func openAPIFilterParameters(table Table) []any {
 		obj{"name": "id", "in": "query", "description": "Filter by id. " + filterOperatorsHelp, "schema": obj{"type": "string"}},
 	}
 	for _, col := range openAPIEntityColumns(table) {
+		switch col.Name {
+		case "limit", "offset", "sort":
+			continue
+		}
 		params = append(params, obj{
 			"name":        col.Name,
 			"in":          "query",
