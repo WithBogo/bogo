@@ -1,4 +1,4 @@
-package postgres
+package <db_package>
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// <repo_name> represents the PostgreSQL repository for <entity_name> management
+// <repo_name> represents the <db_display> repository for <entity_name> management
 type <repo_name> struct {
 	db *gorm.DB
 }
