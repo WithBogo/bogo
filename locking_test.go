@@ -79,3 +79,15 @@ func TestRestVersionConflictBlock(t *testing.T) {
 		t.Error("tables without locking must not get a conflict branch")
 	}
 }
+
+func TestGenerateRestHandler_VersionedUpdateReturnsNewVersion(t *testing.T) {
+	handler := generateRestHandler("svc", lockedTable())
+	if !strings.Contains(handler, "account.Version++") {
+		t.Error("a successful versioned update must return the incremented version")
+	}
+
+	handler = generateRestHandler("svc", plainTable())
+	if strings.Contains(handler, "Version++") {
+		t.Error("tables without a version column must not increment the response version")
+	}
+}

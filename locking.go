@@ -88,3 +88,10 @@ func restVersionConflictBlock(table Table, singularName, entitySingular string) 
 		}
 `, singularName, entitySingular)
 }
+
+func restVersionUpdateBlock(table Table, entityVar string) string {
+	if _, ok := versionColumn(table); !ok {
+		return ""
+	}
+	return fmt.Sprintf("\n\t%s.Version++", entityVar)
+}

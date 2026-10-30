@@ -64,6 +64,7 @@ func (h *<struct_name>Handler) Update<singular_name>(w http.ResponseWriter, r *h
 		return
 	}
 
+	<version_update_block>
 	log.WithContext(h.ctx).WithField("id", id).Info("Successfully updated <entity_singular>")
 	wrapper := &responsewrapper.Wrapper{
 		Data:    <entity_var>,
