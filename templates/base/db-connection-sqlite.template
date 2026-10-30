@@ -1,0 +1,30 @@
+package sqlite
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/glebarez/sqlite"
+	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+)
+
+// Connect opens a SQLite database. SQLite is file based, so only the database path is
+// used and host, port and credentials are ignored.
+func Connect(host, database string, port int, username, password string) (db *gorm.DB, err error) {
+	if dir := filepath.Dir(database); dir != "." {
+		if err = os.MkdirAll(dir, 0o755); err != nil {
+			log.Error(err.Error())
+			return nil, err
+		}
+	}
+
+	db, err = gorm.Open(sqlite.Open(database), &gorm.Config{})
+	if err != nil {
+		log.Error(err.Error())
+		return db, err
+	}
+
+	log.Info("DB Connected")
+	return db, err
+}

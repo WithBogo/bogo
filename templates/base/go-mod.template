@@ -12,5 +12,5 @@ require (
 	github.com/go-playground/validator/v10 v10.26.0
 	github.com/RizkiAnurka/go-library v1.0.4
 	gorm.io/gorm v1.25.5
-	gorm.io/driver/postgres v1.5.4
+	<db_driver_require>
 )

@@ -7,9 +7,8 @@ import (
 
 // generateGoMod creates go.mod content using templates
 func generateGoMod(moduleName string) string {
-	variables := map[string]string{
-		"module_name": moduleName,
-	}
+	variables := dialect.templateVariables(moduleName)
+	variables["module_name"] = moduleName
 
 	content, err := processTemplate("go-mod", variables)
 	if err != nil {
@@ -36,7 +35,7 @@ func generateMainGo(moduleName string, tables []Table) string {
 	additionalImports.WriteString(fmt.Sprintf("\n\t\"%s/internal/application\"", moduleName))
 	additionalImports.WriteString(fmt.Sprintf("\n\t\"%s/internal/interactor\"", moduleName))
 	additionalImports.WriteString(fmt.Sprintf("\n\t\"%s/internal/interactor/rest\"", moduleName))
-	additionalImports.WriteString(fmt.Sprintf("\n\t\"%s/internal/repository/implementor/postgres\"", moduleName))
+	additionalImports.WriteString(fmt.Sprintf("\n\t\"%s/internal/repository/implementor/%s\"", moduleName, dialect.Package))
 
 	repoInit.WriteString("\n\t// Initialize repositories\n")
 	appServiceInit.WriteString("\n\t// Initialize application services\n")
@@ -48,7 +47,7 @@ func generateMainGo(moduleName string, tables []Table) string {
 		entityPlural := strings.ToLower(table.Name)
 
 		// Repository initialization
-		repoInit.WriteString(fmt.Sprintf("\t%sRepo := postgres.New%sRepo(db)\n", entityName, structName))
+		repoInit.WriteString(fmt.Sprintf("\t%sRepo := %s.New%sRepo(db)\n", entityName, dialect.Package, structName))
 
 		// Application service initialization
 		appServiceInit.WriteString(fmt.Sprintf("\t%sAppService := application.New%sDomain(ctx, %sRepo)\n", entityName, structName, entityName))
@@ -67,7 +66,8 @@ func generateMainGo(moduleName string, tables []Table) string {
 		endpoints.WriteString(fmt.Sprintf("\n\tlog.Info(\"  GET/PUT/DELETE /%s/{id} - %s operations\")", entityPlural, structName))
 	}
 
-	variables := map[string]string{
+	variables := dialect.templateVariables(moduleName)
+	for key, value := range map[string]string{
 		"module_name":                        moduleName,
 		"additional_imports":                 additionalImports.String(),
 		"repository_initialization":          repoInit.String(),
@@ -75,6 +75,8 @@ func generateMainGo(moduleName string, tables []Table) string {
 		"adapter_initialization":             adapterInit.String(),
 		"service_parameters":                 ", " + serviceParams.String(),
 		"endpoint_logging":                   endpoints.String(),
+	} {
+		variables[key] = value
 	}
 
 	content, err := processTemplate("main-go", variables)
@@ -86,9 +88,8 @@ func generateMainGo(moduleName string, tables []Table) string {
 
 // generateReadme creates README.md content using templates
 func generateReadme(moduleName string) string {
-	variables := map[string]string{
-		"module_name": moduleName,
-	}
+	variables := dialect.templateVariables(moduleName)
+	variables["module_name"] = moduleName
 
 	content, err := processTemplate("readme", variables)
 	if err != nil {
@@ -99,9 +100,8 @@ func generateReadme(moduleName string) string {
 
 // generateConfig creates configuration structure using templates
 func generateConfig(moduleName string) string {
-	variables := map[string]string{
-		"module_name": moduleName,
-	}
+	variables := dialect.templateVariables(moduleName)
+	variables["module_name"] = moduleName
 
 	content, err := processTemplate("config", variables)
 	if err != nil {
@@ -116,7 +116,7 @@ func generateDBConnection() string {
 		// No variables needed for this template
 	}
 
-	content, err := processTemplate("db-connection", variables)
+	content, err := processTemplate(dialect.templateName("db-connection"), variables)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to generate DB connection: %v", err))
 	}

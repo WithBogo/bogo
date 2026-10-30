@@ -1,0 +1,23 @@
+package mysql
+
+import (
+	"fmt"
+
+	log "github.com/sirupsen/logrus"
+	mysqldriver "gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+// Connect establishes connection to MySQL database
+func Connect(host, database string, port int, username, password string) (db *gorm.DB, err error) {
+	connectionString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		username, password, host, port, database)
+	db, err = gorm.Open(mysqldriver.Open(connectionString), &gorm.Config{})
+	if err != nil {
+		log.Error(err.Error())
+		return db, err
+	}
+
+	log.Info("DB Connected")
+	return db, err
+}
