@@ -57,9 +57,12 @@ func repositoryUpdateBody(table Table, structName, entityParam string) string {
 	if result.RowsAffected == 0 {
 		// Either the row is gone or somebody else updated it first
 		var count int64
-		repo.db.WithContext(ctx).Model(&model.%[2]s{}).
+		result = repo.db.WithContext(ctx).Model(&model.%[2]s{}).
 			Where("id = ? AND is_deleted = ?", %[1]s.ID, false).
 			Count(&count)
+		if result.Error != nil {
+			return result.Error
+		}
 		if count == 0 {
 			return errors.New("%[2]s not found")
 		}
