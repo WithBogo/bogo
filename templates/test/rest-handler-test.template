@@ -1,0 +1,208 @@
+package rest
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"<module_name>/internal/application/dto"
+
+	"github.com/julienschmidt/httprouter"
+)
+
+// mock<struct_name>Service is a hand-rolled mock of the <entity_singular> service used by the handler
+type mock<struct_name>Service struct {
+	createFn  func(ctx context.Context, entity dto.<struct_name>) (int64, error)
+	updateFn  func(ctx context.Context, entity dto.<struct_name>) error
+	deleteFn  func(ctx context.Context, id int64) error
+	getByIDFn func(ctx context.Context, id int64) (dto.<struct_name>, error)
+
+	createCalls int
+	updateCalls int
+}
+
+func (m *mock<struct_name>Service) Find(ctx context.Context, filter map[string]any, sort map[string]any, limit, offset int) (dto.<plural_name>, int64, error) {
+	return nil, 0, nil
+}
+
+func (m *mock<struct_name>Service) Create(ctx context.Context, entity dto.<struct_name>) (int64, error) {
+	m.createCalls++
+	return m.createFn(ctx, entity)
+}
+
+func (m *mock<struct_name>Service) Update(ctx context.Context, entity dto.<struct_name>) error {
+	m.updateCalls++
+	return m.updateFn(ctx, entity)
+}
+
+func (m *mock<struct_name>Service) Delete(ctx context.Context, id int64) error {
+	return m.deleteFn(ctx, id)
+}
+
+func (m *mock<struct_name>Service) GetByID(ctx context.Context, id int64) (dto.<struct_name>, error) {
+	return m.getByIDFn(ctx, id)
+}
+
+// valid<struct_name>Body is a request body that satisfies every validation rule of the DTO
+const valid<struct_name>Body = `<valid_body>`
+
+func do<struct_name>Request(handle httprouter.Handle, method, body string, params httprouter.Params) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, "/<entity_plural>", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handle(rec, req, params)
+	return rec
+}
+
+func Test<struct_name>Handler_Create(t *testing.T) {
+	t.Run("rejects malformed json", func(t *testing.T) {
+		svc := &mock<struct_name>Service{}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Create<singular_name>, http.MethodPost, "{not json", nil)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rec.Code)
+		}
+		if svc.createCalls != 0 {
+			t.Error("service must not be called for a malformed body")
+		}
+	})
+<validation_failure_test>
+	t.Run("creates the entity", func(t *testing.T) {
+		svc := &mock<struct_name>Service{
+			createFn: func(ctx context.Context, entity dto.<struct_name>) (int64, error) { return 42, nil },
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Create<singular_name>, http.MethodPost, valid<struct_name>Body, nil)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if svc.createCalls != 1 {
+			t.Errorf("expected 1 service call, got %d", svc.createCalls)
+		}
+	})
+
+	t.Run("returns 500 when the service fails", func(t *testing.T) {
+		svc := &mock<struct_name>Service{
+			createFn: func(ctx context.Context, entity dto.<struct_name>) (int64, error) { return 0, errors.New("boom") },
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Create<singular_name>, http.MethodPost, valid<struct_name>Body, nil)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", rec.Code)
+		}
+	})
+}
+
+func Test<struct_name>Handler_GetByID(t *testing.T) {
+	t.Run("rejects a non numeric id", func(t *testing.T) {
+		h := New<struct_name>Handler(context.Background(), &mock<struct_name>Service{})
+
+		rec := do<struct_name>Request(h.Get<singular_name>ByID, http.MethodGet, "", httprouter.Params{{Key: "id", Value: "abc"}})
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns the entity", func(t *testing.T) {
+		svc := &mock<struct_name>Service{
+			getByIDFn: func(ctx context.Context, id int64) (dto.<struct_name>, error) {
+				return dto.<struct_name>{ID: id}, nil
+			},
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Get<singular_name>ByID, http.MethodGet, "", httprouter.Params{{Key: "id", Value: "1"}})
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 404 when the entity does not exist", func(t *testing.T) {
+		svc := &mock<struct_name>Service{
+			getByIDFn: func(ctx context.Context, id int64) (dto.<struct_name>, error) {
+				return dto.<struct_name>{}, errors.New("<singular_name> not found")
+			},
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Get<singular_name>ByID, http.MethodGet, "", httprouter.Params{{Key: "id", Value: "1"}})
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", rec.Code)
+		}
+	})
+}
+
+func Test<struct_name>Handler_Update(t *testing.T) {
+	t.Run("rejects a non numeric id", func(t *testing.T) {
+		svc := &mock<struct_name>Service{}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Update<singular_name>, http.MethodPut, valid<struct_name>Body, httprouter.Params{{Key: "id", Value: "abc"}})
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rec.Code)
+		}
+		if svc.updateCalls != 0 {
+			t.Error("service must not be called for an invalid id")
+		}
+	})
+
+	t.Run("uses the id from the url", func(t *testing.T) {
+		var gotID int64
+		svc := &mock<struct_name>Service{
+			updateFn: func(ctx context.Context, entity dto.<struct_name>) error {
+				gotID = entity.ID
+				return nil
+			},
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Update<singular_name>, http.MethodPut, valid<struct_name>Body, httprouter.Params{{Key: "id", Value: "8"}})
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if gotID != 8 {
+			t.Errorf("expected entity id 8, got %d", gotID)
+		}
+	})
+}
+
+func Test<struct_name>Handler_Delete(t *testing.T) {
+	t.Run("deletes the entity", func(t *testing.T) {
+		svc := &mock<struct_name>Service{
+			deleteFn: func(ctx context.Context, id int64) error { return nil },
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Delete<singular_name>, http.MethodDelete, "", httprouter.Params{{Key: "id", Value: "1"}})
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 404 when the entity does not exist", func(t *testing.T) {
+		svc := &mock<struct_name>Service{
+			deleteFn: func(ctx context.Context, id int64) error { return errors.New("<singular_name> not found") },
+		}
+		h := New<struct_name>Handler(context.Background(), svc)
+
+		rec := do<struct_name>Request(h.Delete<singular_name>, http.MethodDelete, "", httprouter.Params{{Key: "id", Value: "1"}})
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", rec.Code)
+		}
+	})
+}

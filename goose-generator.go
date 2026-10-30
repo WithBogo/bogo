@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -73,10 +74,13 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 		return fmt.Errorf("failed to process goose-migration template: %v", err)
 	}
 
-	// Generate filename with timestamp
-	timestamp := time.Now().Format("20060102150405")
-	filename := fmt.Sprintf("%s_create_%s_tables.sql", timestamp, moduleName)
-	migrationPath := filepath.Join(moduleName, "migrations", filename)
+	// Reuse an existing migration file on regenerate; a new timestamp would create a duplicate migration
+	migrationPath := existingMigrationPath(moduleName)
+	if migrationPath == "" {
+		timestamp := time.Now().Format("20060102150405")
+		filename := fmt.Sprintf("%s_create_%s_tables.sql", timestamp, moduleName)
+		migrationPath = filepath.Join(moduleName, "migrations", filename)
+	}
 
 	// Write migration file (writeFile creates directories as needed)
 	err = writeFile(migrationPath, result)
@@ -84,8 +88,18 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 		return fmt.Errorf("failed to write migration file: %v", err)
 	}
 
-	fmt.Printf("Created Goose migration: %s\n", migrationPath)
 	return nil
+}
+
+// existingMigrationPath returns the migration created by a previous run, or "" if there is none
+func existingMigrationPath(moduleName string) string {
+	pattern := filepath.Join(moduleName, "migrations", fmt.Sprintf("*_create_%s_tables.sql", moduleName))
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	sort.Strings(matches)
+	return matches[0]
 }
 
 // generateCreateTable generates CREATE TABLE SQL for a single table

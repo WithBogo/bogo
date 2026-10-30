@@ -51,6 +51,10 @@ func getTemplateDirectory(templateName string) string {
 		"config":            "base",
 		"db-connection":     "base",
 
+		// Test templates
+		"service-test":      "test",
+		"rest-handler-test": "test",
+
 		// Migration templates
 		"goose-migration": "migration",
 
