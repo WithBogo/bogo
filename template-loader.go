@@ -42,6 +42,8 @@ func getTemplateDirectory(templateName string) string {
 		"rest-parameter-header": "rest",
 		"rest-parameter":        "rest",
 		"rest-routes":           "rest",
+		"rest-routes-nested":    "rest",
+		"rest-func-nested":      "rest",
 
 		// Base templates
 		"go-mod":            "base",

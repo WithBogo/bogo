@@ -1,0 +1,90 @@
+// <method_name> handles GET /<parent_plural>/:id/<route_segment> - Get all <entity_plural> that belong to a <parent_singular>
+func (h *<struct_name>Handler) <method_name>(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	idStr := ps.ByName("id")
+	log.WithContext(h.ctx).WithField("id", idStr).Info("Getting <entity_plural> of <parent_singular>")
+
+	wrapper := new(responsewrapper.Wrapper)
+
+	parentID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		log.WithContext(h.ctx).WithError(err).WithField("id", idStr).Error("Invalid ID format")
+		wrapper.Code = http.StatusBadRequest
+		wrapper.Error = "ID must be a valid number"
+		wrapper.Message = "Invalid ID format"
+		wrapper.Respond(w)
+		return
+	}
+
+	// Default pagination
+	limit := 10
+	offset := 0
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
+	}
+
+	filterQuery, err := GetFilterQuery("<entity_snake>")
+	if err != nil {
+		log.Error("Failed to get filter config ", err.Error())
+		wrapper.Code = http.StatusInternalServerError
+		wrapper.Error = err.Error()
+		wrapper.Message = "Failed to get filter configuration"
+		wrapper.Respond(w)
+		return
+	}
+
+	filters, err := httpHelper.ReadQuery(r, filterQuery)
+	if err != nil {
+		log.Error("Failed to retrieve filters ", err.Error())
+		wrapper.Code = http.StatusBadRequest
+		wrapper.Error = err.Error()
+		wrapper.Message = "Failed to retrieve filters"
+		wrapper.Respond(w)
+		return
+	}
+
+	// The path decides the parent: it always wins over a query parameter of the same name
+	filters["<fk_column>"] = parentID
+
+	sortingQuery, err := GetSortingQuery("<entity_snake>")
+	if err != nil {
+		log.Error("Failed to get sorting config ", err.Error())
+		wrapper.Code = http.StatusInternalServerError
+		wrapper.Error = err.Error()
+		wrapper.Message = "Failed to get sorting configuration"
+		wrapper.Respond(w)
+		return
+	}
+
+	sortings := httpHelper.ReadSorting(r, sortingQuery)
+
+	<entity_plural>, total, err := h.service.Find(h.ctx, filters, sortings, limit, offset)
+	if err != nil {
+		log.WithContext(h.ctx).WithError(err).Error("Failed to get <entity_plural> of <parent_singular>")
+		wrapper = &responsewrapper.Wrapper{
+			Error:   err.Error(),
+			Message: "Failed to retrieve <entity_plural>",
+			Code:    http.StatusInternalServerError,
+		}
+		wrapper.Respond(w)
+		return
+	}
+
+	log.WithContext(h.ctx).WithField("count", len(<entity_plural>)).WithField("total", total).Info("Successfully retrieved <entity_plural> of <parent_singular>")
+
+	wrapper = &responsewrapper.Wrapper{
+		Data:    <entity_plural>,
+		Message: "Successfully retrieved <entity_plural>",
+		Code:    http.StatusOK,
+	}
+	wrapper.AddMeta(r, total, int64(limit), int64(offset/limit+1))
+	wrapper.Respond(w)
+}
