@@ -22,9 +22,6 @@ func openAPISchema(col Column) obj {
 	case "bool":
 		return obj{"type": "boolean"}
 	case "time.Time":
-		if strings.EqualFold(col.Type, "DATE") {
-			return obj{"type": "string", "format": "date"}
-		}
 		return obj{"type": "string", "format": "date-time"}
 	case "[]string":
 		return obj{"type": "array", "items": obj{"type": "string"}}

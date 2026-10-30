@@ -79,7 +79,7 @@ func TestGenerateOpenAPISpec_SchemaTypes(t *testing.T) {
 		"age":      {"integer", "int64"},
 		"score":    {"number", "double"},
 		"active":   {"boolean", ""},
-		"birthday": {"string", "date"},
+		"birthday": {"string", "date-time"},
 		"seen_at":  {"string", "date-time"},
 		"tags":     {"array", ""},
 	}
