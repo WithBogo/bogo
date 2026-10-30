@@ -54,7 +54,7 @@ func (h *<struct_name>Handler) Update<singular_name>(w http.ResponseWriter, r *h
 			wrapper.Respond(w)
 			return
 		}
-		
+<version_conflict_block>		
 		wrapper := &responsewrapper.Wrapper{
 			Error:   err.Error(),
 			Message: "Failed to update <entity_singular>",

@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"<module_name>/internal/domain/model"
 	log "github.com/sirupsen/logrus"
@@ -40,7 +42,7 @@ func (repo *<repo_name>) Find(ctx context.Context, filter map[string]any, sort m
 }
 
 // Create creates a new <entity_name>
-func (repo *<repo_name>) Create(ctx context.Context, <entity_param> *model.<struct_name>) (err error) {
+func (repo *<repo_name>) Create(ctx context.Context, <entity_param> *model.<struct_name>) (err error) {<create_hook>
 	result := repo.db.Create(&<entity_param>)
 	if result.Error != nil {
 		log.Error(result.Error)
@@ -49,13 +51,8 @@ func (repo *<repo_name>) Create(ctx context.Context, <entity_param> *model.<stru
 	return nil
 }
 
-// Update updates an existing <entity_name>
-func (repo *<repo_name>) Update(ctx context.Context, <entity_param> model.<struct_name>) (err error) {
-	result := repo.db.Where("id = ?", <entity_param>.ID).Updates(&<entity_param>)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
+// Update updates an existing <entity_name>; soft deleted rows are treated as missing
+func (repo *<repo_name>) Update(ctx context.Context, <entity_param> model.<struct_name>) (err error) {<update_body>
 }
 
 // Delete soft deletes a <entity_name> by ID
@@ -64,7 +61,7 @@ func (repo *<repo_name>) Delete(ctx context.Context, id int64) error {
 
 	result := repo.db.WithContext(ctx).Model(&model.<struct_name>{}).
 		Where("id = ? AND is_deleted = ?", id, false).
-		Update("is_deleted", true)
+		Updates(map[string]any{"is_deleted": true, "deleted_at": time.Now()})
 
 	if result.Error != nil {
 		log.WithError(result.Error).Error("Failed to soft delete <entity_name>")
@@ -72,7 +69,7 @@ func (repo *<repo_name>) Delete(ctx context.Context, id int64) error {
 	}
 
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("<entity_name> with id %d not found or already deleted", id)
+		return errors.New("<struct_name> not found")
 	}
 
 	log.WithField("<entity_name>_id", id).Debug("Successfully soft deleted <entity_name>")
@@ -84,6 +81,9 @@ func (repo *<repo_name>) GetByID(ctx context.Context, id int64) (model.<struct_n
 	var <entity_param> model.<struct_name>
 	result := repo.db.Where("id = ? AND is_deleted = ?", id, false).First(&<entity_param>)
 	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return model.<struct_name>{}, errors.New("<struct_name> not found")
+		}
 		return model.<struct_name>{}, result.Error
 	}
 	return <entity_param>, nil

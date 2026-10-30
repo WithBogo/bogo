@@ -262,6 +262,29 @@ vim config/rest/user.json
 }
 ```
 
+### **Soft Delete and Optimistic Locking**
+
+**Soft delete** is always on. `DELETE /users/:id` keeps the row and sets `is_deleted = true` and `deleted_at`. Deleted rows are invisible to every endpoint: reading, updating or deleting one returns `404`, and an update can never bring a deleted row back.
+
+**Optimistic locking** is opt-in. Add an integer `version` column and concurrent edits can no longer overwrite each other silently:
+
+```sql
+CREATE TABLE accounts (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 1
+);
+```
+
+```bash
+# Read the account, note its version, then send it back with the update
+curl http://localhost:8080/accounts/1            # {"id":1,"name":"alice","version":1}
+curl -X PUT http://localhost:8080/accounts/1 -d '{"name":"alice b","version":1}'   # 200, version is now 2
+curl -X PUT http://localhost:8080/accounts/1 -d '{"name":"alice c","version":1}'   # 409 Conflict
+```
+
+An update only succeeds if the `version` you send is the current one, and the version is bumped in the same SQL statement, so two writers can never both win. Omitting `version` is treated as a stale write and returns `409`.
+
 ### **SQL Type Mapping**
 
 boGO automatically maps SQL types to JSON configuration:

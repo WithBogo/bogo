@@ -104,6 +104,8 @@ func generateRestHandler(moduleName string, table Table) string {
 		"plural_name":     pluralName,
 		"dto_name":        dtoName,
 		"entity_var":      entityVar,
+
+		"version_conflict_block": restVersionConflictBlock(table, singularName, entityName),
 	}
 
 	var handler strings.Builder
