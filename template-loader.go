@@ -49,6 +49,7 @@ func getTemplateDirectory(templateName string) string {
 		"main-go-no-tables": "base",
 		"readme":            "base",
 		"config":            "base",
+		"docs-go":           "base",
 		"db-connection":     "base",
 
 		// Migration templates
