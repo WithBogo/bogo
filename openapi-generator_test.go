@@ -71,7 +71,7 @@ func TestGenerateOpenAPISpec_Paths(t *testing.T) {
 
 func TestGenerateOpenAPISpec_SchemaTypes(t *testing.T) {
 	spec := decodeSpec(t, sampleOpenAPITables())
-	props := lookup(t, spec, "components", "schemas", "User", "properties")
+	props := lookup(t, spec, "components", "schemas", "EntityUser", "properties")
 
 	cases := map[string][2]string{
 		"id":       {"integer", "int64"},
@@ -127,5 +127,31 @@ func TestGenerateOpenAPISpec_Deterministic(t *testing.T) {
 	second, _ := generateOpenAPISpec("svc", sampleOpenAPITables())
 	if first != second {
 		t.Error("the spec must be byte for byte identical across runs, or regeneration reports false changes")
+	}
+}
+
+func TestGenerateOpenAPISpec_ErrorTableSchema(t *testing.T) {
+	tables := append(sampleOpenAPITables(), Table{
+		Name:    "errors",
+		Columns: []Column{{Name: "code", GoType: "string", Type: "VARCHAR(255)"}},
+	})
+	spec := decodeSpec(t, tables)
+
+	schemas := lookup(t, spec, "components", "schemas")
+	if _, ok := schemas["EntityError"]; !ok {
+		t.Fatal("the errors table schema is missing")
+	}
+	if _, ok := schemas[responseErrorSchemaName]; !ok {
+		t.Fatal("the shared error response schema is missing")
+	}
+	if got := lookup(t, schemas, "EntityError", "properties", "code")["type"]; got != "string" {
+		t.Errorf("errors table code property type = %v, want string", got)
+	}
+
+	for _, path := range []string{"/users", "/errors"} {
+		errorSchema := lookup(t, spec, "paths", path, "get", "responses", "400", "content", "application/json", "schema")
+		if got, want := errorSchema["$ref"], "#/components/schemas/"+responseErrorSchemaName; got != want {
+			t.Errorf("%s 400 response schema ref = %v, want %s", path, got, want)
+		}
 	}
 }

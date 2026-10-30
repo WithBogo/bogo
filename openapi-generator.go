@@ -12,6 +12,8 @@ type obj = map[string]any
 
 const filterOperatorsHelp = "Supports operators: like(x), in(a,b), not_in(a,b), not(x), range(a,b), gt(x), gte(x), lt(x), lte(x)."
 
+const responseErrorSchemaName = "ResponseError"
+
 // openAPISchema maps a column to an OpenAPI schema
 func openAPISchema(col Column) obj {
 	switch col.GoType {
@@ -63,7 +65,7 @@ func jsonResponse(description string, schema obj) obj {
 }
 
 func errorResponse(description string) obj {
-	return jsonResponse(description, obj{"$ref": "#/components/schemas/Error"})
+	return jsonResponse(description, obj{"$ref": "#/components/schemas/" + responseErrorSchemaName})
 }
 
 // envelope describes the response wrapper used by every handler: { data, message }
@@ -111,7 +113,7 @@ func openAPIPaths(table Table) (collectionPath, itemPath string, collection, ite
 	name := openAPIStructName(table)
 	entity := strings.ToLower(name)
 	plural := entity + "s"
-	ref := obj{"$ref": "#/components/schemas/" + name}
+	ref := obj{"$ref": "#/components/schemas/Entity" + name}
 	tag := []string{name}
 
 	collectionPath = "/" + plural
@@ -204,7 +206,7 @@ func openAPIPaths(table Table) (collectionPath, itemPath string, collection, ite
 func generateOpenAPISpec(moduleName string, tables []Table) (string, error) {
 	paths := obj{}
 	schemas := obj{
-		"Error": obj{
+		responseErrorSchemaName: obj{
 			"type": "object",
 			"properties": obj{
 				"error":   obj{"description": "Technical error detail"},
@@ -219,7 +221,7 @@ func generateOpenAPISpec(moduleName string, tables []Table) (string, error) {
 		collectionPath, itemPath, collection, item := openAPIPaths(table)
 		paths[collectionPath] = collection
 		paths[itemPath] = item
-		schemas[name] = openAPIEntitySchema(table)
+		schemas["Entity"+name] = openAPIEntitySchema(table)
 		tags = append(tags, obj{"name": name})
 	}
 
