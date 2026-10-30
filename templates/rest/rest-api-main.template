@@ -81,7 +81,7 @@ func (r *API) WithRoutes(router *httprouter.Router) {
 	router.GET("/openapi.json", func(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
 		docs.SpecHandler(w, req)
 	})
-	router.GET("/docs", func(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+	router.GET("/openapi/docs", func(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
 		docs.UIHandler(w, req)
 	})
 <route_registrations>}
