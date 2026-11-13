@@ -3,7 +3,7 @@ func (h *<struct_name>Handler) Delete<singular_name>(w http.ResponseWriter, r *h
 	idStr := ps.ByName("id")
 	log.WithContext(h.ctx).WithField("id", idStr).Info("Deleting <entity_singular>")
 
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		log.WithContext(h.ctx).WithError(err).WithField("id", idStr).Error("Invalid ID format")
 		wrapper := &responsewrapper.Wrapper{

@@ -3,7 +3,7 @@ func (h *<struct_name>Handler) Update<singular_name>(w http.ResponseWriter, r *h
 	idStr := ps.ByName("id")
 	log.WithContext(h.ctx).WithField("id", idStr).Info("Updating <entity_singular>")
 
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		log.WithContext(h.ctx).WithError(err).WithField("id", idStr).Error("Invalid ID format")
 		wrapper := &responsewrapper.Wrapper{
@@ -54,7 +54,7 @@ func (h *<struct_name>Handler) Update<singular_name>(w http.ResponseWriter, r *h
 			wrapper.Respond(w)
 			return
 		}
-		
+<version_conflict_block>		
 		wrapper := &responsewrapper.Wrapper{
 			Error:   err.Error(),
 			Message: "Failed to update <entity_singular>",
@@ -64,6 +64,7 @@ func (h *<struct_name>Handler) Update<singular_name>(w http.ResponseWriter, r *h
 		return
 	}
 
+	<version_update_block>
 	log.WithContext(h.ctx).WithField("id", id).Info("Successfully updated <entity_singular>")
 	wrapper := &responsewrapper.Wrapper{
 		Data:    <entity_var>,

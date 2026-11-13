@@ -129,7 +129,7 @@ func openAPIPaths(table Table) (collectionPath, itemPath string, collection, ite
 				"200": jsonResponse("Paginated list of "+plural, obj{
 					"type": "object",
 					"properties": obj{
-						"data":    obj{"type": "array", "items": ref},
+						"data":    obj{"type": "array", "nullable": true, "items": ref},
 						"meta":    obj{"type": "object", "description": "Pagination info and links"},
 						"message": obj{"type": "string"},
 					},
@@ -198,6 +198,10 @@ func openAPIPaths(table Table) (collectionPath, itemPath string, collection, ite
 				"500": errorResponse("Unexpected error"),
 			},
 		},
+	}
+	if _, ok := versionColumn(table); ok {
+		put := item["put"].(obj)
+		put["responses"].(obj)["409"] = errorResponse("Version conflict: the row was changed by someone else")
 	}
 	return
 }

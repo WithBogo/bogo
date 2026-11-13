@@ -61,7 +61,7 @@ func generateAllFiles(moduleName string, tables []Table) error {
 
 	// Generate Goose migration with schema support
 	schema := ""
-	if moduleName == "wearable-service" {
+	if moduleName == "wearable-service" && dialect.Name == "postgres" {
 		schema = "wearable"
 	}
 	if err := generateGooseMigration(moduleName, tables, schema); err != nil {
@@ -88,7 +88,7 @@ func generateBaseFiles(moduleName string, tables []Table) error {
 		filepath.Join(moduleName, "internal", "config", "config.go"): generateConfig(moduleName),
 
 		// Database connection
-		filepath.Join(moduleName, "internal", "repository", "implementor", "postgres", "connection.go"): generateDBConnection(),
+		filepath.Join(moduleName, "internal", "repository", "implementor", dialect.Package, "connection.go"): generateDBConnection(),
 
 		// MetaField (common fields)
 		filepath.Join(moduleName, "internal", "domain", "model", "meta.go"): generateMetaField(),
@@ -250,7 +250,7 @@ func generateInteractorAdapters(moduleName string, tables []Table) error {
 func generateRepositoryImplementations(moduleName string, tables []Table) error {
 	for _, table := range tables {
 		repoContent := generatePostgresRepository(moduleName, table)
-		repoFile := filepath.Join(moduleName, "internal", "repository", "implementor", "postgres", strings.ToLower(table.Name)+"_repo.go")
+		repoFile := filepath.Join(moduleName, "internal", "repository", "implementor", dialect.Package, strings.ToLower(table.Name)+"_repo.go")
 
 		if err := writeFile(repoFile, repoContent); err != nil {
 			return err

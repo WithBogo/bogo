@@ -155,3 +155,25 @@ func TestGenerateOpenAPISpec_ErrorTableSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateOpenAPISpec_ListDataNullableAndVersionConflict(t *testing.T) {
+	tables := append(sampleOpenAPITables(), Table{
+		Name: "accounts",
+		Columns: []Column{
+			{Name: "name", GoType: "string", Type: "VARCHAR(255)"},
+			{Name: "version", GoType: "int64", Type: "BIGINT"},
+		},
+	})
+	spec := decodeSpec(t, tables)
+
+	data := lookup(t, spec, "paths", "/users", "get", "responses", "200", "content", "application/json", "schema", "properties", "data")
+	if data["nullable"] != true {
+		t.Error("list data must be nullable: a nil slice is serialized as null")
+	}
+	if _, ok := lookup(t, spec, "paths", "/accounts/{id}", "put", "responses")["409"]; !ok {
+		t.Error("PUT on a table with a version column must document 409")
+	}
+	if _, ok := lookup(t, spec, "paths", "/users/{id}", "put", "responses")["409"]; ok {
+		t.Error("PUT on a table without a version column must not document 409")
+	}
+}

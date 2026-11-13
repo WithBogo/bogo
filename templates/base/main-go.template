@@ -15,10 +15,10 @@ import (
 
 type envConfig struct {
 	DBHost      string `envconfig:"DB_HOST" default:"localhost"`
-	DBName      string `envconfig:"DB_NAME" default:"<module_name>"`
-	DBUsername  string `envconfig:"DB_USER" default:"postgres"`
-	DBPassword  string `envconfig:"DB_PWD" default:"postgres"`
-	DBPort      int    `envconfig:"DB_PORT" default:"5432"`
+	DBName      string `envconfig:"DB_NAME" default:"<db_name_default>"`
+	DBUsername  string `envconfig:"DB_USER" default:"<db_user_default>"`
+	DBPassword  string `envconfig:"DB_PWD" default:"<db_password_default>"`
+	DBPort      int    `envconfig:"DB_PORT" default:"<db_port_default>"`
 	ServicePort string `envconfig:"SVC_PORT" default:"8080"`
 	DebugMode   string `envconfig:"DEBUG_MODE" default:"debug"`
 	LogAddress  string `envconfig:"LOG_ADDRESS" default:"localhost:12201"`
@@ -42,7 +42,7 @@ func main() {
 	ctx := context.Background()
 
 	// Connect to database
-	db, err := postgres.Connect(env.DBHost, env.DBName, env.DBPort, env.DBUsername, env.DBPassword)
+	db, err := <db_package>.Connect(env.DBHost, env.DBName, env.DBPort, env.DBUsername, env.DBPassword)
 	if err != nil {
 		log.Error("Failed to connect to database: ", err.Error())
 		return
