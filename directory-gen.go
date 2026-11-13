@@ -8,7 +8,7 @@ import (
 )
 
 // createHexagonalArchitecture creates the complete hexagonal architecture
-func createHexagonalArchitecture(moduleName, sqlSchemaFile string) error {
+func createHexagonalArchitecture(moduleName, sqlSchemaFile string, opts genOptions) error {
 	// Parse SQL schema to extract table information
 	tables, err := parseSQLSchema(sqlSchemaFile)
 	if err != nil {
@@ -33,10 +33,14 @@ func createHexagonalArchitecture(moduleName, sqlSchemaFile string) error {
 			"   );", sqlSchemaFile)
 	}
 
-	// Create directory structure
-	err = createDirectoryStructure(moduleName)
-	if err != nil {
-		return fmt.Errorf("failed to create directory structure: %v", err)
+	startTracking(moduleName, opts)
+
+	// Create directory structure (dry runs must not touch the disk)
+	if !opts.DryRun {
+		err = createDirectoryStructure(moduleName)
+		if err != nil {
+			return fmt.Errorf("failed to create directory structure: %v", err)
+		}
 	}
 
 	// Generate all template files
@@ -45,17 +49,34 @@ func createHexagonalArchitecture(moduleName, sqlSchemaFile string) error {
 		return fmt.Errorf("failed to generate files: %v", err)
 	}
 
-	// Format generated Go files
-	err = formatGeneratedFiles(moduleName)
+	if opts.DryRun {
+		tracker.printSummary()
+		return nil
+	}
+
+	// Format only the Go files written in this run, never files the user edited
+	err = formatGeneratedFiles(moduleName, tracker.writtenGoFiles())
 	if err != nil {
 		fmt.Printf("⚠️  Warning: Could not format files: %v\n", err)
 		// Don't fail the entire process for formatting issues
 	}
 
+	tracker.refreshHashes()
+	if err := tracker.saveManifest(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not save %s: %v\n", manifestFileName, err)
+	}
+	tracker.printSummary()
+
 	// Initialize Go module and install dependencies
 	err = initializeGoModule(moduleName)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Go module: %v", err)
+	}
+
+	// go mod tidy rewrites go.mod; treat the tidied file as the generated baseline
+	tracker.rebaseline(filepath.Join(moduleName, "go.mod"))
+	if err := tracker.saveManifest(); err != nil {
+		fmt.Printf("⚠️  Warning: Could not save %s: %v\n", manifestFileName, err)
 	}
 
 	return nil
@@ -99,11 +120,14 @@ func createDirectoryStructure(moduleName string) error {
 
 	// Create all folders
 	for _, folder := range folders {
+		_, statErr := os.Stat(folder)
 		err := os.MkdirAll(folder, 0755)
 		if err != nil {
 			return fmt.Errorf("failed to create folder %s: %v", folder, err)
 		}
-		fmt.Printf("Created: %s\n", folder)
+		if os.IsNotExist(statErr) {
+			fmt.Printf("Created: %s\n", folder)
+		}
 	}
 
 	return nil
@@ -165,22 +189,23 @@ func initializeGoModule(moduleName string) error {
 	return nil
 }
 
-// formatGeneratedFiles formats all generated Go files using gofmt
-func formatGeneratedFiles(moduleName string) error {
+// formatGeneratedFiles formats the given generated Go files (paths relative to the module directory)
+func formatGeneratedFiles(moduleName string, files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
 	fmt.Printf("🎨 Formatting generated files...\n")
 
-	moduleDir := moduleName
-
 	// Try goimports first (includes gofmt + import management)
-	cmd := exec.Command("goimports", "-w", ".")
-	cmd.Dir = moduleDir
+	cmd := exec.Command("goimports", append([]string{"-w"}, files...)...)
+	cmd.Dir = moduleName
 	err := cmd.Run()
 
 	if err != nil {
 		// Fallback to gofmt if goimports is not available
 		fmt.Printf("  - goimports not available, using gofmt\n")
-		cmd = exec.Command("gofmt", "-w", ".")
-		cmd.Dir = moduleDir
+		cmd = exec.Command("gofmt", append([]string{"-w"}, files...)...)
+		cmd.Dir = moduleName
 		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("failed to format files: %v", err)

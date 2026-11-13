@@ -1,0 +1,209 @@
+package application
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"<module_name>/internal/application/dto"
+	"<module_name>/internal/domain/model"
+)
+
+// mock<struct_name>Repo is a hand-rolled mock of the <entity_name> repository
+type mock<struct_name>Repo struct {
+	findFn    func(ctx context.Context, filter, sort map[string]any, limit, offset int) ([]model.<struct_name>, int64, error)
+	createFn  func(ctx context.Context, entity *model.<struct_name>) error
+	updateFn  func(ctx context.Context, entity model.<struct_name>) error
+	deleteFn  func(ctx context.Context, id int64) error
+	getByIDFn func(ctx context.Context, id int64) (model.<struct_name>, error)
+}
+
+func (m *mock<struct_name>Repo) Find(ctx context.Context, filter, sort map[string]any, limit, offset int) ([]model.<struct_name>, int64, error) {
+	return m.findFn(ctx, filter, sort, limit, offset)
+}
+
+func (m *mock<struct_name>Repo) Create(ctx context.Context, entity *model.<struct_name>) error {
+	return m.createFn(ctx, entity)
+}
+
+func (m *mock<struct_name>Repo) Update(ctx context.Context, entity model.<struct_name>) error {
+	return m.updateFn(ctx, entity)
+}
+
+func (m *mock<struct_name>Repo) Delete(ctx context.Context, id int64) error {
+	return m.deleteFn(ctx, id)
+}
+
+func (m *mock<struct_name>Repo) GetByID(ctx context.Context, id int64) (model.<struct_name>, error) {
+	return m.getByIDFn(ctx, id)
+}
+
+func Test<service_name>_Create(t *testing.T) {
+	t.Run("returns the id assigned by the repository", func(t *testing.T) {
+		repo := &mock<struct_name>Repo{
+			createFn: func(ctx context.Context, entity *model.<struct_name>) error {
+				entity.ID = 7
+				return nil
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		id, err := svc.Create(context.Background(), dto.<struct_name>{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if id != 7 {
+			t.Errorf("expected id 7, got %d", id)
+		}
+	})
+
+	t.Run("propagates repository errors", func(t *testing.T) {
+		wantErr := errors.New("insert failed")
+		repo := &mock<struct_name>Repo{
+			createFn: func(ctx context.Context, entity *model.<struct_name>) error { return wantErr },
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if _, err := svc.Create(context.Background(), dto.<struct_name>{}); !errors.Is(err, wantErr) {
+			t.Errorf("expected %v, got %v", wantErr, err)
+		}
+	})
+}
+
+func Test<service_name>_GetByID(t *testing.T) {
+	t.Run("maps the model to a dto", func(t *testing.T) {
+		repo := &mock<struct_name>Repo{
+			getByIDFn: func(ctx context.Context, id int64) (model.<struct_name>, error) {
+				var found model.<struct_name>
+				found.ID = id
+				return found, nil
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		got, err := svc.GetByID(context.Background(), 3)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.ID != 3 {
+			t.Errorf("expected id 3, got %d", got.ID)
+		}
+	})
+
+	t.Run("propagates repository errors", func(t *testing.T) {
+		wantErr := errors.New("<struct_name> not found")
+		repo := &mock<struct_name>Repo{
+			getByIDFn: func(ctx context.Context, id int64) (model.<struct_name>, error) {
+				return model.<struct_name>{}, wantErr
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if _, err := svc.GetByID(context.Background(), 3); !errors.Is(err, wantErr) {
+			t.Errorf("expected %v, got %v", wantErr, err)
+		}
+	})
+}
+
+func Test<service_name>_Update(t *testing.T) {
+	t.Run("passes the dto id to the repository", func(t *testing.T) {
+		var gotID int64
+		repo := &mock<struct_name>Repo{
+			updateFn: func(ctx context.Context, entity model.<struct_name>) error {
+				gotID = entity.ID
+				return nil
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if err := svc.Update(context.Background(), dto.<struct_name>{ID: 5}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotID != 5 {
+			t.Errorf("expected repository to receive id 5, got %d", gotID)
+		}
+	})
+
+	t.Run("propagates repository errors", func(t *testing.T) {
+		wantErr := errors.New("update failed")
+		repo := &mock<struct_name>Repo{
+			updateFn: func(ctx context.Context, entity model.<struct_name>) error { return wantErr },
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if err := svc.Update(context.Background(), dto.<struct_name>{ID: 5}); !errors.Is(err, wantErr) {
+			t.Errorf("expected %v, got %v", wantErr, err)
+		}
+	})
+}
+
+func Test<service_name>_Delete(t *testing.T) {
+	t.Run("passes the id to the repository", func(t *testing.T) {
+		var gotID int64
+		repo := &mock<struct_name>Repo{
+			deleteFn: func(ctx context.Context, id int64) error {
+				gotID = id
+				return nil
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if err := svc.Delete(context.Background(), 9); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotID != 9 {
+			t.Errorf("expected id 9, got %d", gotID)
+		}
+	})
+
+	t.Run("propagates repository errors", func(t *testing.T) {
+		wantErr := errors.New("delete failed")
+		repo := &mock<struct_name>Repo{
+			deleteFn: func(ctx context.Context, id int64) error { return wantErr },
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if err := svc.Delete(context.Background(), 9); !errors.Is(err, wantErr) {
+			t.Errorf("expected %v, got %v", wantErr, err)
+		}
+	})
+}
+
+func Test<service_name>_Find(t *testing.T) {
+	t.Run("maps models to dtos and returns the total", func(t *testing.T) {
+		repo := &mock<struct_name>Repo{
+			findFn: func(ctx context.Context, filter, sort map[string]any, limit, offset int) ([]model.<struct_name>, int64, error) {
+				var first, second model.<struct_name>
+				first.ID = 1
+				second.ID = 2
+				return []model.<struct_name>{first, second}, 2, nil
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		got, total, err := svc.Find(context.Background(), nil, nil, 10, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 2 || len(got) != 2 {
+			t.Fatalf("expected 2 results with total 2, got %d results and total %d", len(got), total)
+		}
+		if got[0].ID != 1 || got[1].ID != 2 {
+			t.Errorf("unexpected ids: %d, %d", got[0].ID, got[1].ID)
+		}
+	})
+
+	t.Run("propagates repository errors", func(t *testing.T) {
+		wantErr := errors.New("query failed")
+		repo := &mock<struct_name>Repo{
+			findFn: func(ctx context.Context, filter, sort map[string]any, limit, offset int) ([]model.<struct_name>, int64, error) {
+				return nil, 0, wantErr
+			},
+		}
+		svc := New<service_name>(context.Background(), repo)
+
+		if _, _, err := svc.Find(context.Background(), nil, nil, 10, 0); !errors.Is(err, wantErr) {
+			t.Errorf("expected %v, got %v", wantErr, err)
+		}
+	})
+}
