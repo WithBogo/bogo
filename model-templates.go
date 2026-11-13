@@ -127,6 +127,7 @@ func generateDTO(moduleName string, table Table) string {
 
 	// Generate field mappings for Marshal/Unmarshal methods
 	var marshalFields strings.Builder
+	var marshalPointerFields strings.Builder
 	var unmarshalFields strings.Builder
 
 	// Add table-specific fields
@@ -144,6 +145,14 @@ func generateDTO(moduleName string, table Table) string {
 		jsonTag := fmt.Sprintf("`json:\"%s,omitempty\"`", strings.ToLower(col.Name))
 		if col.Validate != "" {
 			jsonTag = fmt.Sprintf("`json:\"%s,omitempty\" validate:\"%s\"`", strings.ToLower(col.Name), col.Validate)
+		}
+
+		if col.usesPointer() {
+			// Optional number whose rules reject 0: a pointer tells "not sent" from "sent as 0"
+			fields.WriteString(fmt.Sprintf("\t%s *%s %s\n", fieldName, col.GoType, jsonTag))
+			marshalPointerFields.WriteString(fmt.Sprintf("\n\tif d.%[1]s != nil {\n\t\tdomainModel.%[1]s = *d.%[1]s\n\t}", fieldName))
+			unmarshalFields.WriteString(fmt.Sprintf("\n\t{\n\t\tv := domainModel.%[1]s\n\t\td.%[1]s = &v\n\t}", fieldName))
+			continue
 		}
 
 		fields.WriteString(fmt.Sprintf("\t%s %s %s\n", fieldName, col.GoType, jsonTag))
@@ -170,6 +179,8 @@ func generateDTO(moduleName string, table Table) string {
 		"import_statement": dtoImportStatement,
 		"marshal_fields":   marshalFields.String(),
 		"unmarshal_fields": unmarshalFields.String(),
+
+		"marshal_pointer_fields": marshalPointerFields.String(),
 	}
 
 	result, err := processTemplate("dto", variables)

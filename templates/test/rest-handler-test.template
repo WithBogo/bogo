@@ -47,7 +47,7 @@ func (m *mock<struct_name>Service) GetByID(ctx context.Context, id int64) (dto.<
 }
 
 // valid<struct_name>Body is a request body that satisfies every validation rule of the DTO
-const valid<struct_name>Body = `<valid_body>`
+const valid<struct_name>Body = <valid_body>
 
 func do<struct_name>Request(handle httprouter.Handle, method, body string, params httprouter.Params) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, "/<entity_plural>", strings.NewReader(body))

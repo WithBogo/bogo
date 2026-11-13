@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/format"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,6 +93,11 @@ func writeManagedFile(filePath, content string, perm os.FileMode) error {
 	rel := t.relPath(filePath)
 
 	existing, readErr := os.ReadFile(filePath)
+	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+		// Only a missing file may be created. A file that exists but cannot be read (permissions,
+		// a directory in the way) must not be treated as absent and overwritten.
+		return fmt.Errorf("failed to read %s: %v", filePath, readErr)
+	}
 	exists := readErr == nil
 
 	switch {
@@ -198,13 +205,24 @@ func (t *writeTracker) printSummary() {
 	}
 }
 
-// rebaseline records the current on-disk hash of a file as its generated state, so
-// changes made by tools run right after generation (go mod tidy) are not seen as user edits
+// rebaseline records the current on-disk hash of a file written in this run as its generated
+// state, so changes made by tools run right after generation (go mod tidy) are not seen as
+// user edits. Files that were skipped keep their old baseline: their content is the user's.
 func (t *writeTracker) rebaseline(path string) {
-	if t.opts.DryRun {
+	if t.opts.DryRun || !t.wasWritten(path) {
 		return
 	}
 	if data, err := os.ReadFile(path); err == nil {
 		t.manifest[t.relPath(path)] = hashContent(data)
 	}
+}
+
+// wasWritten reports whether the generator wrote this file during the current run
+func (t *writeTracker) wasWritten(path string) bool {
+	for _, written := range t.written {
+		if written == path {
+			return true
+		}
+	}
+	return false
 }

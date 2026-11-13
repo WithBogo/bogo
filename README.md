@@ -70,7 +70,7 @@ boGO records a hash of every file it writes in `<service>/.bogo-manifest.json`. 
 
 - files you have not touched are updated to match the new schema
 - files you edited by hand are **skipped** and listed, so your changes are never lost (use `--force` to overwrite them)
-- the Goose migration created by the first run is reused, not duplicated
+- applied migrations are never rewritten, because Goose does not run them again. New tables get a new `..._add_<service>_tables.sql` migration, and a table whose columns changed is reported so you can write the `ALTER TABLE` migration by hand
 
 Commit `.bogo-manifest.json` with your service. Run with `--dry-run` first to preview a regeneration.
 
@@ -303,7 +303,15 @@ Constraints in your schema become `validate` tags on the generated DTOs. The han
 | `status VARCHAR(20) CHECK (status IN ('active', 'banned'))` | `omitempty,max=20,oneof=active banned` |
 | `id UUID` | `omitempty,uuid` |
 
-`required` is only applied to strings and timestamps without a `DEFAULT`, because `0` and `false` are legitimate values for numbers and booleans. Only simple inline `CHECK` clauses (comparisons and `IN` lists) are mirrored; the database still enforces everything else.
+`required` is only applied to strings and timestamps without a `DEFAULT`, because `0` and `false` are legitimate values for numbers and booleans.
+
+How constraints are mirrored:
+
+- A `CHECK` is mirrored only when the whole expression is understood: comparisons against a number and `IN` lists on that column, joined with `AND`. Anything else (`OR`, other columns, `BETWEEN`) is skipped and left to the database, because a half-understood rule would reject values the database accepts.
+- When several comparisons limit the same side, the strictest wins. On integer columns a fractional limit becomes the equivalent integer one (`rank >= 1.5` is `gte=2`).
+- `IN` lists respect SQL quoting, so `'a,b'` is one value. Commas and pipes are escaped for the validator. A list with a value that cannot be written into a tag (a quote, backtick or backslash) is skipped entirely.
+- An optional number whose rules reject `0` (for example `age INT CHECK (age >= 18)`) is a pointer in the DTO, so a missing field is accepted but an explicit `0` is rejected. Responses for such fields now include the value, even `0`, instead of omitting it.
+- A mandatory number that rejects `0` is validated even when it is missing.
 
 ### **Generated Tests**
 

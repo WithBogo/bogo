@@ -2,18 +2,71 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
 
-// generateGooseMigration creates a Goose migration file from the SQL schema
+// generateGooseMigration creates the Goose migration for the SQL schema.
+//
+// Goose never runs an applied migration again, so a migration that already exists is never
+// rewritten. When the schema gained tables since the last run, a new migration that creates
+// only those tables is added instead. Changed columns of existing tables cannot be derived
+// from the schema alone: they are reported, and need a hand written ALTER migration.
 func generateGooseMigration(moduleName string, tables []Table, schema string) error {
 	if len(tables) == 0 {
 		return nil // Skip if no tables
 	}
 
+	existingPath := existingMigrationPath(moduleName)
+	if existingPath == "" {
+		content, err := buildMigration(tables, schema)
+		if err != nil {
+			return err
+		}
+		return writeMigration(moduleName, "create", content)
+	}
+
+	applied := tablesInMigrations(moduleName)
+	var added []Table
+	for _, table := range tables {
+		if !applied[strings.ToLower(table.Name)] {
+			added = append(added, table)
+		}
+	}
+
+	warnAboutChangedTables(moduleName, tables, applied, schema)
+
+	if len(added) == 0 {
+		return nil
+	}
+
+	content, err := buildMigration(added, schema)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("New tables since the last run, adding a migration for: %s\n", tableNames(added))
+	return writeMigration(moduleName, "add", content)
+}
+
+// writeMigration writes a migration with a fresh timestamp
+func writeMigration(moduleName, action, content string) error {
+	timestamp := time.Now().Format("20060102150405")
+	filename := fmt.Sprintf("%s_%s_%s_tables.sql", timestamp, action, moduleName)
+	migrationPath := filepath.Join(moduleName, "migrations", filename)
+
+	// Write migration file (writeFile creates directories as needed)
+	if err := writeFile(migrationPath, content); err != nil {
+		return fmt.Errorf("failed to write migration file: %v", err)
+	}
+	return nil
+}
+
+// buildMigration renders the Up and Down sections that create and drop the given tables
+func buildMigration(tables []Table, schema string) (string, error) {
 	// Generate schema creation
 	var schemaCreation strings.Builder
 	if schema != "" {
@@ -71,24 +124,59 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 
 	result, err := processTemplate("goose-migration", vars)
 	if err != nil {
-		return fmt.Errorf("failed to process goose-migration template: %v", err)
+		return "", fmt.Errorf("failed to process goose-migration template: %v", err)
 	}
+	return result, nil
+}
 
-	// Reuse an existing migration file on regenerate; a new timestamp would create a duplicate migration
-	migrationPath := existingMigrationPath(moduleName)
-	if migrationPath == "" {
-		timestamp := time.Now().Format("20060102150405")
-		filename := fmt.Sprintf("%s_create_%s_tables.sql", timestamp, moduleName)
-		migrationPath = filepath.Join(moduleName, "migrations", filename)
+var createTableStatementRegex = regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\w+\.)?(\w+)\s*\(`)
+
+// migrationTexts returns the content of every migration of the service
+func migrationTexts(moduleName string) []string {
+	files, _ := filepath.Glob(filepath.Join(moduleName, "migrations", "*.sql"))
+	var texts []string
+	for _, file := range files {
+		if data, err := os.ReadFile(file); err == nil {
+			texts = append(texts, string(data))
+		}
 	}
+	return texts
+}
 
-	// Write migration file (writeFile creates directories as needed)
-	err = writeFile(migrationPath, result)
-	if err != nil {
-		return fmt.Errorf("failed to write migration file: %v", err)
+// tablesInMigrations returns the lower case names of the tables created by existing migrations
+func tablesInMigrations(moduleName string) map[string]bool {
+	tables := map[string]bool{}
+	for _, text := range migrationTexts(moduleName) {
+		for _, match := range createTableStatementRegex.FindAllStringSubmatch(text, -1) {
+			tables[strings.ToLower(match[1])] = true
+		}
 	}
+	return tables
+}
 
-	return nil
+// warnAboutChangedTables reports tables that already have a migration but whose definition in
+// the schema no longer matches it. The migration was probably applied, so it is left alone.
+func warnAboutChangedTables(moduleName string, tables []Table, applied map[string]bool, schema string) {
+	all := strings.Join(migrationTexts(moduleName), "\n")
+
+	var changed []Table
+	for _, table := range tables {
+		if applied[strings.ToLower(table.Name)] && !strings.Contains(all, generateCreateTable(table, schema)) {
+			changed = append(changed, table)
+		}
+	}
+	if len(changed) > 0 {
+		fmt.Printf("⚠️  The schema of %s differs from the existing migration. Applied migrations are not rewritten:\n", tableNames(changed))
+		fmt.Printf("    write an ALTER TABLE migration by hand for the changed columns.\n")
+	}
+}
+
+func tableNames(tables []Table) string {
+	names := make([]string, len(tables))
+	for i, table := range tables {
+		names[i] = table.Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // existingMigrationPath returns the migration created by a previous run, or "" if there is none

@@ -103,10 +103,6 @@ func parseSQLSchema(filename string) ([]Table, error) {
 var (
 	tableConstraintRegex = regexp.MustCompile(`^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|INDEX)\b`)
 	maxLengthRegex       = regexp.MustCompile(`(?i)^(?:VARCHAR|CHAR|NVARCHAR)\((\d+)\)`)
-	checkRegex           = regexp.MustCompile(`(?i)\bCHECK\s*\((.*)\)`)
-	checkAndRegex        = regexp.MustCompile(`(?i)\s+AND\s+`)
-	checkCompareRegex    = regexp.MustCompile(`^\(?\s*(\w+)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*\)?$`)
-	checkInRegex         = regexp.MustCompile(`(?i)^\(?\s*(\w+)\s+IN\s*\(([^)]*)\)\s*\)?$`)
 )
 
 // parseMaxLength extracts n from VARCHAR(n) or CHAR(n)
@@ -117,122 +113,6 @@ func parseMaxLength(sqlType string) int {
 		}
 	}
 	return 0
-}
-
-// parseCheckConstraint reads simple inline CHECK clauses (comparisons and IN lists) on this column.
-// Anything more complex is ignored: the database still enforces it, we just do not mirror it.
-func parseCheckConstraint(column *Column, line string) {
-	m := checkRegex.FindStringSubmatch(line)
-	if m == nil {
-		return
-	}
-
-	for _, clause := range checkAndRegex.Split(strings.TrimSpace(m[1]), -1) {
-		clause = strings.TrimSpace(clause)
-
-		if cm := checkCompareRegex.FindStringSubmatch(clause); cm != nil && strings.EqualFold(cm[1], column.Name) {
-			value, err := strconv.ParseFloat(cm[3], 64)
-			if err != nil {
-				continue
-			}
-			switch cm[2] {
-			case ">=":
-				column.Gte = &value
-			case ">":
-				column.Gt = &value
-			case "<=":
-				column.Lte = &value
-			case "<":
-				column.Lt = &value
-			}
-			continue
-		}
-
-		if im := checkInRegex.FindStringSubmatch(clause); im != nil && strings.EqualFold(im[1], column.Name) {
-			for _, item := range strings.Split(im[2], ",") {
-				item = strings.Trim(strings.TrimSpace(item), "'")
-				if item != "" {
-					column.OneOf = append(column.OneOf, item)
-				}
-			}
-		}
-	}
-}
-
-// buildValidateTag derives go-playground/validator rules from the column definition.
-// "required" is only used where the zero value is never a legitimate value (strings and
-// timestamps); for numbers and booleans 0/false are valid, so they stay optional.
-func buildValidateTag(column Column) string {
-	var rules []string
-
-	needsValue := !column.IsNullable && !column.IsPrimaryKey && column.DefaultValue == ""
-	if needsValue && (column.GoType == "string" || column.GoType == "time.Time") {
-		rules = append(rules, "required")
-	}
-	hasPresence := len(rules) > 0
-
-	switch column.GoType {
-	case "string":
-		if column.MaxLength > 0 {
-			rules = append(rules, fmt.Sprintf("max=%d", column.MaxLength))
-		}
-		if len(column.OneOf) > 0 {
-			rules = append(rules, "oneof="+joinOneOf(column.OneOf))
-		}
-		if strings.HasPrefix(strings.ToUpper(column.Type), "UUID") {
-			rules = append(rules, "uuid")
-		}
-	case "int64", "float64":
-		if column.Gte != nil {
-			rules = append(rules, "gte="+formatBound(*column.Gte))
-		}
-		if column.Gt != nil {
-			rules = append(rules, "gt="+formatBound(*column.Gt))
-		}
-		if column.Lte != nil {
-			rules = append(rules, "lte="+formatBound(*column.Lte))
-		}
-		if column.Lt != nil {
-			rules = append(rules, "lt="+formatBound(*column.Lt))
-		}
-		if column.GoType == "int64" && len(column.OneOf) > 0 && allIntegers(column.OneOf) {
-			rules = append(rules, "oneof="+strings.Join(column.OneOf, " "))
-		}
-	}
-
-	if len(rules) == 0 {
-		return ""
-	}
-	if !hasPresence {
-		// Optional field: only validate when a value was actually sent
-		rules = append([]string{"omitempty"}, rules...)
-	}
-	return strings.Join(rules, ",")
-}
-
-// joinOneOf formats the oneof list, single-quoting values that contain spaces
-func joinOneOf(values []string) string {
-	quoted := make([]string, len(values))
-	for i, v := range values {
-		if strings.ContainsAny(v, " ,") {
-			v = "'" + v + "'"
-		}
-		quoted[i] = v
-	}
-	return strings.Join(quoted, " ")
-}
-
-func allIntegers(values []string) bool {
-	for _, v := range values {
-		if _, err := strconv.ParseInt(v, 10, 64); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
-func formatBound(v float64) string {
-	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // parseColumnDefinition parses a single column definition line

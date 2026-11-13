@@ -75,7 +75,6 @@ func createHexagonalArchitecture(moduleName, sqlSchemaFile string, opts genOptio
 
 	// go mod tidy rewrites go.mod; treat the tidied file as the generated baseline
 	tracker.rebaseline(filepath.Join(moduleName, "go.mod"))
-	tracker.rebaseline(filepath.Join(moduleName, "go.sum"))
 	if err := tracker.saveManifest(); err != nil {
 		fmt.Printf("⚠️  Warning: Could not save %s: %v\n", manifestFileName, err)
 	}
