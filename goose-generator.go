@@ -73,16 +73,44 @@ func buildMigration(tables []Table, schema string) (string, error) {
 		schemaCreation.WriteString(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS \"%s\";\n\n", schema))
 	}
 
+	// Create referenced tables first so FOREIGN KEY constraints can be resolved
+	tables = sortTablesByDependency(tables)
+
 	// Generate table creations
 	var tableCreations strings.Builder
 	var tableDrops strings.Builder
 	var indexCreations strings.Builder
 	var indexDrops strings.Builder
 
+	// Foreign keys into tables that are created later (cycles) are added afterwards
+	deferred := deferredForeignKeys(tables)
+	if dialect.Name == "sqlite" {
+		// SQLite cannot ALTER TABLE ADD CONSTRAINT, but accepts a REFERENCES to a table
+		// that does not exist yet, so everything stays inline
+		deferred = nil
+	}
+	var constraintCreations strings.Builder
+	var constraintDrops strings.Builder
+
 	for _, table := range tables {
 		// Generate CREATE TABLE statement
-		tableCreations.WriteString(generateCreateTable(table, schema))
+		tableCreations.WriteString(generateCreateTable(table, schema, deferred[table.Name]))
 		tableCreations.WriteString("\n")
+
+		qualifiedName := table.Name
+		if schema != "" {
+			qualifiedName = fmt.Sprintf("%s.%s", schema, table.Name)
+		}
+		for _, col := range deferred[table.Name] {
+			constraint := fmt.Sprintf("fk_%s_%s", table.Name, col.Name)
+			constraintCreations.WriteString(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) %s;\n",
+				qualifiedName, constraint, col.Name, referenceClause(col, schema)))
+			drop := "DROP CONSTRAINT"
+			if dialect.Name == "mysql" {
+				drop = "DROP FOREIGN KEY"
+			}
+			constraintDrops.WriteString(fmt.Sprintf("ALTER TABLE %s %s %s;\n", qualifiedName, drop, constraint))
+		}
 
 		// Generate DROP TABLE statement (reverse order for dependencies)
 		tableName := table.Name
@@ -115,10 +143,10 @@ func buildMigration(tables []Table, schema string) (string, error) {
 	// Generate migration content
 	vars := map[string]string{
 		"schema_creation": schemaCreation.String(),
-		"table_creations": tableCreations.String(),
+		"table_creations": tableCreations.String() + constraintCreations.String(),
 		"index_creations": indexCreations.String(),
 		"index_drops":     indexDrops.String(),
-		"table_drops":     reversedDrops.String(),
+		"table_drops":     constraintDrops.String() + reversedDrops.String(),
 		"schema_drops":    schemaDrops.String(),
 	}
 
@@ -161,7 +189,7 @@ func warnAboutChangedTables(moduleName string, tables []Table, applied map[strin
 
 	var changed []Table
 	for _, table := range tables {
-		if applied[strings.ToLower(table.Name)] && !strings.Contains(all, generateCreateTable(table, schema)) {
+		if applied[strings.ToLower(table.Name)] && !migrationHasTable(all, table, tables, applied, schema) {
 			changed = append(changed, table)
 		}
 	}
@@ -169,6 +197,32 @@ func warnAboutChangedTables(moduleName string, tables []Table, applied map[strin
 		fmt.Printf("⚠️  The schema of %s differs from the existing migration. Applied migrations are not rewritten:\n", tableNames(changed))
 		fmt.Printf("    write an ALTER TABLE migration by hand for the changed columns.\n")
 	}
+}
+
+// migrationHasTable reports whether the migration text contains the CREATE TABLE of a table.
+// A foreign key into a table created later is written as ALTER TABLE instead of inline, and
+// which ones depends on the set of tables the migration was generated for: all tables (first
+// run) or only the tables that were new at the time (later runs). Both are accepted.
+func migrationHasTable(text string, table Table, tables []Table, applied map[string]bool, schema string) bool {
+	if strings.Contains(text, generateCreateTable(table, schema, nil)) {
+		return true
+	}
+	if dialect.Name == "sqlite" {
+		return false
+	}
+	var unapplied []Table
+	for _, t := range tables {
+		if !applied[strings.ToLower(t.Name)] {
+			unapplied = append(unapplied, t)
+		}
+	}
+	for _, set := range [][]Table{tables, unapplied} {
+		deferred := deferredForeignKeys(sortTablesByDependency(set))
+		if strings.Contains(text, generateCreateTable(table, schema, deferred[table.Name])) {
+			return true
+		}
+	}
+	return false
 }
 
 func tableNames(tables []Table) string {
@@ -191,7 +245,7 @@ func existingMigrationPath(moduleName string) string {
 }
 
 // generateCreateTable generates CREATE TABLE SQL for a single table
-func generateCreateTable(table Table, schema string) string {
+func generateCreateTable(table Table, schema string, deferred []Column) string {
 	var sql strings.Builder
 
 	tableName := table.Name
@@ -232,7 +286,13 @@ func generateCreateTable(table Table, schema string) string {
 	// Add table-specific columns
 	for _, col := range table.Columns {
 		sql.WriteString("    ")
-		sql.WriteString(generateColumnDefinition(col, table.Name))
+		inline := true
+		for _, d := range deferred {
+			if d.Name == col.Name {
+				inline = false
+			}
+		}
+		sql.WriteString(generateColumnDefinition(col, table.Name, schema, inline))
 		sql.WriteString(",\n")
 	}
 
@@ -258,7 +318,7 @@ func generateCreateTable(table Table, schema string) string {
 	sql.WriteString(");")
 	return sql.String()
 } // generateColumnDefinition generates SQL column definition
-func generateColumnDefinition(col Column, tableName string) string {
+func generateColumnDefinition(col Column, tableName, schema string, inlineReference bool) string {
 	var def strings.Builder
 
 	def.WriteString(col.Name)
@@ -287,6 +347,11 @@ func generateColumnDefinition(col Column, tableName string) string {
 	if col.DefaultValue != "" && !col.IsPrimaryKey {
 		def.WriteString(" DEFAULT ")
 		def.WriteString(dialect.sqlDefault(col.DefaultValue))
+	}
+
+	if col.RefTable != "" && inlineReference {
+		def.WriteString(" ")
+		def.WriteString(referenceClause(col, schema))
 	}
 
 	return def.String()

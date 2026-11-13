@@ -303,6 +303,27 @@ curl -X PUT http://localhost:8080/accounts/1 -d '{"name":"alice c","version":1}'
 
 An update only succeeds if the `version` you send is the current one, and the version is bumped in the same SQL statement, so two writers can never both win. Omitting `version` is treated as a stale write and returns `409`.
 
+### **Foreign Keys and Nested Endpoints**
+
+`REFERENCES` clauses (inline or as a table level `FOREIGN KEY`) become nested list endpoints and real constraints in the migration:
+
+```sql
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id)
+);
+```
+
+```bash
+# All orders of user 5, with the usual filtering, sorting and pagination
+curl "http://localhost:8080/users/5/orders?limit=10&sort=desc(id)"
+```
+
+- The path decides the parent: it overrides a `user_id` query parameter.
+- Only references to the primary key of a table in the same schema get an endpoint. Other references still become constraints.
+- If a table has several foreign keys to the same parent (for example `sender_id` and `receiver_id`), each gets its own route: `/users/:id/messages_by_sender_id`.
+- The Goose migration creates referenced tables first, whatever order they have in your schema file.
+
 ### **SQL Type Mapping**
 
 boGO automatically maps SQL types to JSON configuration:

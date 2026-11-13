@@ -1,0 +1,1 @@
+	router.GET("/<parent_plural>/:id/<route_segment>", r.Authenticate(New<child_struct>Handler(r.ctx, r.<child_field>).<method_name>, []string{}))

@@ -26,6 +26,13 @@ type Column struct {
 	GormTag      string
 	JSONTag      string
 
+	// Foreign key target, set when the column REFERENCES another table
+	RefSchema   string // set when the target is written as schema.table
+	RefTable    string
+	RefColumn   string
+	RefOnDelete string // ON DELETE action, empty when not written
+	RefOnUpdate string // ON UPDATE action, empty when not written
+
 	// Constraints used to build request validation
 	MaxLength int        // from VARCHAR(n) / CHAR(n), 0 when unbounded
 	Gte, Gt   *float64   // from CHECK (col >= n) / (col > n)
@@ -45,6 +52,7 @@ func parseSQLSchema(filename string) ([]Table, error) {
 	var tables []Table
 	var currentTable *Table
 	var inTableDefinition bool
+	var pendingForeignKeys []foreignKey
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -70,6 +78,8 @@ func parseSQLSchema(filename string) ([]Table, error) {
 		// End of table definition
 		if inTableDefinition && strings.Contains(line, ");") {
 			if currentTable != nil {
+				applyForeignKeys(currentTable, pendingForeignKeys)
+				pendingForeignKeys = nil
 				tables = append(tables, *currentTable)
 				currentTable = nil
 			}
@@ -79,6 +89,11 @@ func parseSQLSchema(filename string) ([]Table, error) {
 
 		// Parse column definitions
 		if inTableDefinition && currentTable != nil {
+			if fk, ok := parseTableForeignKey(line); ok {
+				pendingForeignKeys = append(pendingForeignKeys, fk)
+				continue
+			}
+
 			column := parseColumnDefinition(line)
 			if column != nil {
 				currentTable.Columns = append(currentTable.Columns, *column)
@@ -153,6 +168,7 @@ func parseColumnDefinition(line string) *Column {
 		column.IsNullable = false
 	}
 
+	parseInlineReference(column, line)
 	column.MaxLength = parseMaxLength(column.Type)
 	parseCheckConstraint(column, line)
 

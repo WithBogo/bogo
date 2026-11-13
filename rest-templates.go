@@ -20,6 +20,8 @@ func generateRestAPIMain(moduleName string, tables []Table) string {
 		interactorImport = fmt.Sprintf("\n\n\t\"%s/internal/interactor\"", moduleName)
 	}
 
+	relations := findRelations(tables)
+
 	// Generate service interfaces and initialization for each table
 	for i, table := range tables {
 		structName := toCamelCase(table.Name)
@@ -56,6 +58,23 @@ func generateRestAPIMain(moduleName string, tables []Table) string {
 		}
 		routeRegistrations.WriteString("\n")
 		routeRegistrations.WriteString(routeResult)
+
+		// Nested routes: GET /<parents>/:id/<children> for every table that references this one
+		for _, relation := range parentRelations(relations, table) {
+			childStruct := relationStructName(relation.Child)
+			nestedResult, err := processTemplate("rest-routes-nested", map[string]string{
+				"parent_plural":  entityPlural,
+				"route_segment":  relation.nestedRouteSegment(),
+				"child_struct":   childStruct,
+				"child_field":    strings.ToLower(childStruct) + "Service",
+				"method_name":    relation.nestedMethodName(),
+			})
+			if err != nil {
+				panic(fmt.Sprintf("Error processing rest-routes-nested template: %v", err))
+			}
+			routeRegistrations.WriteString("\n")
+			routeRegistrations.WriteString(nestedResult)
+		}
 	}
 
 	serviceParamsStr := ""
@@ -80,7 +99,7 @@ func generateRestAPIMain(moduleName string, tables []Table) string {
 }
 
 // generateRestHandler creates REST handler for individual table
-func generateRestHandler(moduleName string, table Table) string {
+func generateRestHandler(moduleName string, table Table, relations []Relation) string {
 	structName := toCamelCase(table.Name)
 	if strings.HasSuffix(structName, "s") {
 		structName = structName[:len(structName)-1]
@@ -152,6 +171,26 @@ func generateRestHandler(moduleName string, table Table) string {
 	}
 	handler.WriteString("\n")
 	handler.WriteString(deleteResult)
+
+	// Nested list endpoints for every foreign key that points at another table
+	for _, relation := range childRelations(relations, table) {
+		nestedVars := map[string]string{
+			"struct_name":     structName,
+			"entity_plural":   entityPlural,
+			"entity_snake":    entityName,
+			"method_name":     relation.nestedMethodName(),
+			"parent_plural":   strings.ToLower(relationStructName(relation.Parent)) + "s",
+			"parent_singular": strings.ToLower(relationStructName(relation.Parent)),
+			"route_segment":   relation.nestedRouteSegment(),
+			"fk_column":       relation.Column.Name,
+		}
+		nestedResult, err := processTemplate("rest-func-nested", nestedVars)
+		if err != nil {
+			panic(fmt.Sprintf("Error processing rest-func-nested template: %v", err))
+		}
+		handler.WriteString("\n")
+		handler.WriteString(nestedResult)
+	}
 
 	return handler.String()
 }

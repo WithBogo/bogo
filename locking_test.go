@@ -81,12 +81,12 @@ func TestRestVersionConflictBlock(t *testing.T) {
 }
 
 func TestGenerateRestHandler_VersionedUpdateReturnsNewVersion(t *testing.T) {
-	handler := generateRestHandler("svc", lockedTable())
+	handler := generateRestHandler("svc", lockedTable(), nil)
 	if !strings.Contains(handler, "account.Version++") {
 		t.Error("a successful versioned update must return the incremented version")
 	}
 
-	handler = generateRestHandler("svc", plainTable())
+	handler = generateRestHandler("svc", plainTable(), nil)
 	if strings.Contains(handler, "Version++") {
 		t.Error("tables without a version column must not increment the response version")
 	}
