@@ -58,6 +58,11 @@ func generateAllFiles(moduleName string, tables []Table) error {
 		return err
 	}
 
+	// Generate the OpenAPI spec and the package that serves it
+	if err := generateOpenAPIFiles(moduleName, tables); err != nil {
+		return err
+	}
+
 	// Generate Goose migration with schema support
 	schema := ""
 	if moduleName == "wearable-service" && dialect.Name == "postgres" {

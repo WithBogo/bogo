@@ -161,6 +161,7 @@ your-service/
 - **Database**: PostgreSQL, MySQL or SQLite with GORM, migrations with Goose
 - **Architecture**: Clean hexagonal architecture with dependency inversion
 - **Validation**: Request validation and error handling
+- **API Docs**: OpenAPI 3.0 spec and Swagger UI served by the service
 - **Docker**: Complete containerization with PostgreSQL
 - **Logging**: Structured logging with health checks
 - **Testing**: Generated unit tests for services and handlers, with mockable interfaces
@@ -279,6 +280,17 @@ vim config/rest/user.json
   "omitempty": true
 }
 ```
+
+### **OpenAPI Documentation**
+
+Every generated service documents itself. The OpenAPI 3.0 spec is built from your schema and embedded in the binary:
+
+| URL | What it serves |
+|-----|----------------|
+| `/openapi.json` | The OpenAPI 3.0 document, also saved as `docs/openapi.json` |
+| `/openapi/docs` | Swagger UI for the spec (loads the UI assets from a CDN) |
+
+The spec covers the CRUD routes of every table: path and query parameters (limit, offset, sort and one filter per column), request and response bodies, error responses and Bearer auth. It is regenerated together with the code, so it never drifts from the schema. Use it to generate API clients, for example with `openapi-generator`.
 
 ### **Soft Delete and Optimistic Locking**
 

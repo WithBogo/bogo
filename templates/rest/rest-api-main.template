@@ -3,6 +3,7 @@ package rest
 import (
 	"context"
 	"net/http"<interactor_import>
+	"<module_name>/docs"
 	responsewrapper "github.com/RizkiAnurka/go-library/response-wrapper"
 	
 	"github.com/julienschmidt/httprouter"
@@ -74,5 +75,13 @@ func (r *API) WithRoutes(router *httprouter.Router) {
 			Code:    http.StatusOK,
 		}
 		wrapper.Respond(w)
+	})
+
+	// API documentation
+	router.GET("/openapi.json", func(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+		docs.SpecHandler(w, req)
+	})
+	router.GET("/openapi/docs", func(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+		docs.UIHandler(w, req)
 	})
 <route_registrations>}
