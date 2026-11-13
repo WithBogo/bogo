@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +32,13 @@ type Column struct {
 	RefColumn   string
 	RefOnDelete string // ON DELETE action, empty when not written
 	RefOnUpdate string // ON UPDATE action, empty when not written
+
+	// Constraints used to build request validation
+	MaxLength int        // from VARCHAR(n) / CHAR(n), 0 when unbounded
+	Gte, Gt   *float64   // from CHECK (col >= n) / (col > n)
+	Lte, Lt   *float64   // from CHECK (col <= n) / (col < n)
+	OneOf     []string   // from CHECK (col IN ('a', 'b'))
+	Validate  string     // resulting go-playground/validator rules, empty when none
 }
 
 // parseSQLSchema parses SQL CREATE TABLE statements and extracts table information
@@ -107,30 +115,31 @@ func parseSQLSchema(filename string) ([]Table, error) {
 	return tables, nil
 }
 
+var (
+	tableConstraintRegex = regexp.MustCompile(`^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|INDEX)\b`)
+	maxLengthRegex       = regexp.MustCompile(`(?i)^(?:VARCHAR|CHAR|NVARCHAR)\((\d+)\)`)
+)
+
+// parseMaxLength extracts n from VARCHAR(n) or CHAR(n)
+func parseMaxLength(sqlType string) int {
+	if m := maxLengthRegex.FindStringSubmatch(sqlType); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 // parseColumnDefinition parses a single column definition line
 func parseColumnDefinition(line string) *Column {
 	line = strings.TrimSpace(line)
 	line = strings.TrimSuffix(line, ",")
 
-	// Skip table level constraint definitions: they start with the constraint keyword
-	if first := strings.Fields(line); len(first) > 0 {
-		switch strings.ToUpper(first[0]) {
-		case "CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "INDEX", "KEY":
-			return nil
-		}
-	}
-
-	// Inline constraints (PRIMARY KEY, UNIQUE, ...) on a column that also has a REFERENCES
-	// clause must not drop the column, or its foreign key would be lost
-	inlineFK := hasInlineReference(line)
-
-	// Skip constraint definitions
-	constraintKeywords := []string{"CONSTRAINT", "PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CHECK", "INDEX"}
+	// Skip table-level constraint definitions. Only a leading keyword counts: inline
+	// column attributes such as "email VARCHAR(255) UNIQUE NOT NULL" must stay columns.
 	lineUpper := strings.ToUpper(line)
-	for _, keyword := range constraintKeywords {
-		if !inlineFK && strings.Contains(lineUpper, keyword) {
-			return nil
-		}
+	if tableConstraintRegex.MatchString(lineUpper) {
+		return nil
 	}
 
 	parts := strings.Fields(line)
@@ -160,6 +169,8 @@ func parseColumnDefinition(line string) *Column {
 	}
 
 	parseInlineReference(column, line)
+	column.MaxLength = parseMaxLength(column.Type)
+	parseCheckConstraint(column, line)
 
 	// Extract default value
 	defaultRegex := regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+)`)
@@ -227,6 +238,8 @@ func generateGoFieldInfo(column *Column) {
 
 	// Build JSON tag using original column name to preserve proper snake_case
 	column.JSONTag = fmt.Sprintf(`json:"%s,omitempty"`, column.Name)
+
+	column.Validate = buildValidateTag(*column)
 }
 
 // toCamelCase converts snake_case to CamelCase with proper ID handling

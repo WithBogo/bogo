@@ -13,19 +13,30 @@ func useDialect(t *testing.T, name string) {
 }
 
 func TestParseArgs(t *testing.T) {
-	positional, selected, err := parseArgs([]string{"svc", "--db=mysql", "schema.sql"})
+	positional, opts, err := parseArgs([]string{"svc", "--db=mysql", "schema.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(positional) != 2 || positional[0] != "svc" || positional[1] != "schema.sql" {
 		t.Errorf("unexpected positional arguments %v", positional)
 	}
-	if selected.Name != "mysql" {
-		t.Errorf("expected mysql, got %s", selected.Name)
+	if opts.Dialect.Name != "mysql" {
+		t.Errorf("expected mysql, got %s", opts.Dialect.Name)
+	}
+	if opts.DryRun || opts.Force {
+		t.Error("--dry-run and --force must be off unless given")
 	}
 
-	if _, selected, _ := parseArgs([]string{"svc", "schema.sql"}); selected.Name != "postgres" {
-		t.Errorf("postgres must stay the default, got %s", selected.Name)
+	if _, opts, _ := parseArgs([]string{"svc", "schema.sql"}); opts.Dialect.Name != "postgres" {
+		t.Errorf("postgres must stay the default, got %s", opts.Dialect.Name)
+	}
+
+	_, opts, err = parseArgs([]string{"--dry-run", "svc", "--db=sqlite", "--force", "schema.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.DryRun || !opts.Force || opts.Dialect.Name != "sqlite" {
+		t.Errorf("flags must combine in any order: %+v", opts)
 	}
 	if _, _, err := parseArgs([]string{"--db=oracle"}); err == nil || !strings.Contains(err.Error(), "supported") {
 		t.Errorf("unknown databases must list the supported ones, got %v", err)

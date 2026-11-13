@@ -218,3 +218,22 @@ func TestRestHandler_NestedDropsFKFromQueryValidation(t *testing.T) {
 		t.Error("the nested handler must not validate the path-derived foreign key from the query string")
 	}
 }
+
+func TestMigrationHasTable_AcceptsDeferredForeignKeys(t *testing.T) {
+	tables := []Table{
+		{Name: "a", Columns: []Column{{Name: "b_id", Type: "BIGINT", RefTable: "b", RefColumn: "id"}}},
+		{Name: "b", Columns: []Column{{Name: "a_id", Type: "BIGINT", RefTable: "a", RefColumn: "id"}}},
+	}
+	sorted := sortTablesByDependency(tables)
+	deferred := deferredForeignKeys(sorted)
+	var text string
+	for _, table := range sorted {
+		text += generateCreateTable(table, "", deferred[table.Name]) + "\n"
+	}
+	applied := map[string]bool{"a": true, "b": true}
+	for _, table := range tables {
+		if !migrationHasTable(text, table, tables, applied, "") {
+			t.Errorf("table %s of an unchanged cyclic schema must not be reported as changed", table.Name)
+		}
+	}
+}
