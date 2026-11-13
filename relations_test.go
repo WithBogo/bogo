@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -125,5 +126,95 @@ func TestSortTablesByDependency_Cycle(t *testing.T) {
 	}
 	if sorted := sortTablesByDependency(tables); len(sorted) != 2 {
 		t.Errorf("cycles must not drop tables, got %d", len(sorted))
+	}
+}
+
+func TestParseSQLSchema_QualifiedInlineAndActions(t *testing.T) {
+	path := writeSchema(t, `
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE ON UPDATE SET NULL,
+    code VARCHAR(10) UNIQUE,
+    user_id BIGINT UNIQUE REFERENCES users(id) ON DELETE restrict,
+    shipping_id BIGINT,
+    CONSTRAINT fk_ship FOREIGN KEY (shipping_id) REFERENCES "public"."addresses" (id) ON DELETE SET NULL
+);
+`)
+	tables, err := parseSQLSchema(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols := map[string]Column{}
+	for _, c := range tables[0].Columns {
+		cols[c.Name] = c
+	}
+	o := cols["owner_id"]
+	if o.RefSchema != "auth" || o.RefTable != "users" || o.RefColumn != "id" || o.RefOnDelete != "CASCADE" || o.RefOnUpdate != "SET NULL" {
+		t.Errorf("qualified inline reference wrong: %+v", o)
+	}
+	u, ok := cols["user_id"]
+	if !ok || u.RefTable != "users" || u.RefOnDelete != "RESTRICT" {
+		t.Errorf("a UNIQUE column with REFERENCES must keep its foreign key: %+v", u)
+	}
+	s := cols["shipping_id"]
+	if s.RefSchema != "public" || s.RefTable != "addresses" || s.RefOnDelete != "SET NULL" {
+		t.Errorf("qualified table level foreign key wrong: %+v", s)
+	}
+	if _, ok := cols["fk_ship"]; ok {
+		t.Error("table level constraint must not become a column")
+	}
+}
+
+func TestFindRelations_IgnoresSchemaQualifiedTarget(t *testing.T) {
+	tables := []Table{
+		{Name: "users", Columns: []Column{{Name: "id", IsPrimaryKey: true}}},
+		{Name: "orders", Columns: []Column{{Name: "user_id", RefSchema: "auth", RefTable: "users", RefColumn: "id"}}},
+	}
+	if r := findRelations(tables); len(r) != 0 {
+		t.Errorf("a reference into another schema is not a nested endpoint: %+v", r)
+	}
+}
+
+func TestReferenceClause(t *testing.T) {
+	col := Column{RefTable: "users", RefColumn: "id", RefOnDelete: "CASCADE", RefOnUpdate: "NO ACTION"}
+	if got := referenceClause(col, "app"); got != "REFERENCES app.users(id) ON DELETE CASCADE ON UPDATE NO ACTION" {
+		t.Errorf("got %q", got)
+	}
+	col = Column{RefSchema: "auth", RefTable: "users", RefColumn: "id"}
+	if got := referenceClause(col, "app"); got != "REFERENCES auth.users(id)" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestDeferredForeignKeys_Cycle(t *testing.T) {
+	tables := sortTablesByDependency([]Table{
+		{Name: "a", Columns: []Column{{Name: "b_id", RefTable: "b"}}},
+		{Name: "b", Columns: []Column{{Name: "a_id", RefTable: "a"}}},
+		{Name: "c", Columns: []Column{{Name: "c_id", RefTable: "c"}}}, // self reference stays inline
+	})
+	deferred := deferredForeignKeys(tables)
+	if len(deferred) != 1 {
+		t.Fatalf("exactly one constraint of the cycle must be deferred, got %v", deferred)
+	}
+	if len(deferred["b"]) != 1 || deferred["b"][0].Name != "a_id" {
+		t.Errorf("unexpected deferred constraints: %v", deferred)
+	}
+}
+
+func TestGenerateCreateTable_DeferredReference(t *testing.T) {
+	table := Table{Name: "a", Columns: []Column{{Name: "b_id", Type: "BIGINT", RefTable: "b", RefColumn: "id"}}}
+	if sql := generateCreateTable(table, "", nil); !strings.Contains(sql, "REFERENCES b(id)") {
+		t.Errorf("reference should be inline: %s", sql)
+	}
+	if sql := generateCreateTable(table, "", table.Columns); strings.Contains(sql, "REFERENCES") {
+		t.Errorf("deferred reference must not be inline: %s", sql)
+	}
+}
+
+func TestRestHandler_NestedDropsFKFromQueryValidation(t *testing.T) {
+	tables := relationTables()
+	handler := generateRestHandler("svc", tables[0], findRelations(tables))
+	if !strings.Contains(handler, `info.DBKey != "user_id"`) || !strings.Contains(handler, "ReadQuery(r, pathFilterQuery)") {
+		t.Error("the nested handler must not validate the path-derived foreign key from the query string")
 	}
 }

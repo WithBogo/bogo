@@ -26,8 +26,11 @@ type Column struct {
 	JSONTag      string
 
 	// Foreign key target, set when the column REFERENCES another table
-	RefTable  string
-	RefColumn string
+	RefSchema   string // set when the target is written as schema.table
+	RefTable    string
+	RefColumn   string
+	RefOnDelete string // ON DELETE action, empty when not written
+	RefOnUpdate string // ON UPDATE action, empty when not written
 }
 
 // parseSQLSchema parses SQL CREATE TABLE statements and extracts table information
@@ -109,11 +112,23 @@ func parseColumnDefinition(line string) *Column {
 	line = strings.TrimSpace(line)
 	line = strings.TrimSuffix(line, ",")
 
+	// Skip table level constraint definitions: they start with the constraint keyword
+	if first := strings.Fields(line); len(first) > 0 {
+		switch strings.ToUpper(first[0]) {
+		case "CONSTRAINT", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "INDEX", "KEY":
+			return nil
+		}
+	}
+
+	// Inline constraints (PRIMARY KEY, UNIQUE, ...) on a column that also has a REFERENCES
+	// clause must not drop the column, or its foreign key would be lost
+	inlineFK := hasInlineReference(line)
+
 	// Skip constraint definitions
 	constraintKeywords := []string{"CONSTRAINT", "PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CHECK", "INDEX"}
 	lineUpper := strings.ToUpper(line)
 	for _, keyword := range constraintKeywords {
-		if strings.Contains(lineUpper, keyword) {
+		if !inlineFK && strings.Contains(lineUpper, keyword) {
 			return nil
 		}
 	}

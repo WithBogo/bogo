@@ -8,22 +8,51 @@ import (
 )
 
 var (
-	inlineReferenceRegex = regexp.MustCompile(`(?i)\bREFERENCES\s+(\w+)\s*(?:\(\s*(\w+)\s*\))?`)
-	tableForeignKeyRegex = regexp.MustCompile(`(?i)\bFOREIGN\s+KEY\s*\(\s*(\w+)\s*\)\s*REFERENCES\s+(\w+)\s*(?:\(\s*(\w+)\s*\))?`)
+	// A reference target is "table" or "schema.table", each part optionally "quoted"
+	inlineReferenceRegex = regexp.MustCompile(`(?i)\bREFERENCES\s+(?:"?(\w+)"?\s*\.\s*)?"?(\w+)"?\s*(?:\(\s*"?(\w+)"?\s*\))?`)
+	tableForeignKeyRegex = regexp.MustCompile(`(?i)\bFOREIGN\s+KEY\s*\(\s*"?(\w+)"?\s*\)\s*REFERENCES\s+(?:"?(\w+)"?\s*\.\s*)?"?(\w+)"?\s*(?:\(\s*"?(\w+)"?\s*\))?`)
+	onDeleteRegex        = regexp.MustCompile(`(?i)\bON\s+DELETE\s+(CASCADE|SET\s+NULL|SET\s+DEFAULT|RESTRICT|NO\s+ACTION)`)
+	onUpdateRegex        = regexp.MustCompile(`(?i)\bON\s+UPDATE\s+(CASCADE|SET\s+NULL|SET\s+DEFAULT|RESTRICT|NO\s+ACTION)`)
 )
 
 // foreignKey is a table level FOREIGN KEY clause waiting to be attached to its column
 type foreignKey struct {
 	Column    string
+	RefSchema string
 	RefTable  string
 	RefColumn string
+	OnDelete  string
+	OnUpdate  string
+}
+
+// normalizeAction upper-cases a referential action and collapses its whitespace
+func normalizeAction(action string) string {
+	return strings.ToUpper(strings.Join(strings.Fields(action), " "))
+}
+
+// referentialActions reads ON DELETE / ON UPDATE from a column or constraint line
+func referentialActions(line string) (onDelete, onUpdate string) {
+	if m := onDeleteRegex.FindStringSubmatch(line); m != nil {
+		onDelete = normalizeAction(m[1])
+	}
+	if m := onUpdateRegex.FindStringSubmatch(line); m != nil {
+		onUpdate = normalizeAction(m[1])
+	}
+	return onDelete, onUpdate
+}
+
+// hasInlineReference reports whether a column definition line carries a REFERENCES clause
+func hasInlineReference(line string) bool {
+	return inlineReferenceRegex.MatchString(line)
 }
 
 // parseInlineReference reads "REFERENCES parent(col)" on a column definition line
 func parseInlineReference(column *Column, line string) {
 	if m := inlineReferenceRegex.FindStringSubmatch(line); m != nil {
-		column.RefTable = m[1]
-		column.RefColumn = m[2]
+		column.RefSchema = m[1]
+		column.RefTable = m[2]
+		column.RefColumn = m[3]
+		column.RefOnDelete, column.RefOnUpdate = referentialActions(line)
 	}
 }
 
@@ -33,7 +62,8 @@ func parseTableForeignKey(line string) (foreignKey, bool) {
 	if m == nil {
 		return foreignKey{}, false
 	}
-	return foreignKey{Column: m[1], RefTable: m[2], RefColumn: m[3]}, true
+	onDelete, onUpdate := referentialActions(line)
+	return foreignKey{Column: m[1], RefSchema: m[2], RefTable: m[3], RefColumn: m[4], OnDelete: onDelete, OnUpdate: onUpdate}, true
 }
 
 // applyForeignKeys attaches table level foreign keys to the columns they constrain
@@ -41,8 +71,11 @@ func applyForeignKeys(table *Table, keys []foreignKey) {
 	for _, key := range keys {
 		for i := range table.Columns {
 			if strings.EqualFold(table.Columns[i].Name, key.Column) {
+				table.Columns[i].RefSchema = key.RefSchema
 				table.Columns[i].RefTable = key.RefTable
 				table.Columns[i].RefColumn = key.RefColumn
+				table.Columns[i].RefOnDelete = key.OnDelete
+				table.Columns[i].RefOnUpdate = key.OnUpdate
 			}
 		}
 	}
@@ -83,7 +116,9 @@ func findRelations(tables []Table) []Relation {
 		var found []Relation
 
 		for _, col := range child.Columns {
-			if col.RefTable == "" {
+			if col.RefTable == "" || col.RefSchema != "" {
+				// A schema-qualified target is not a table of this schema, so it is
+				// only a constraint, not a nested endpoint
 				continue
 			}
 			parent, ok := byName[strings.ToLower(col.RefTable)]
@@ -172,7 +207,7 @@ func sortTablesByDependency(tables []Table) []Table {
 
 		var deps []int
 		for _, col := range tables[i].Columns {
-			if j, ok := index[strings.ToLower(col.RefTable)]; ok && j != i && col.RefTable != "" {
+			if j, ok := index[strings.ToLower(col.RefTable)]; ok && j != i && col.RefTable != "" && col.RefSchema == "" {
 				deps = append(deps, j)
 			}
 		}
@@ -189,6 +224,54 @@ func sortTablesByDependency(tables []Table) []Table {
 		visit(i)
 	}
 	return ordered
+}
+
+// referenceClause renders "REFERENCES [schema.]table(col) [ON DELETE ..] [ON UPDATE ..]".
+// projectSchema qualifies targets that were written without a schema.
+func referenceClause(col Column, projectSchema string) string {
+	refSchema := col.RefSchema
+	if refSchema == "" {
+		refSchema = projectSchema
+	}
+	refTable := col.RefTable
+	if refSchema != "" {
+		refTable = fmt.Sprintf("%s.%s", refSchema, refTable)
+	}
+	clause := "REFERENCES " + refTable
+	if col.RefColumn != "" {
+		clause += fmt.Sprintf("(%s)", col.RefColumn)
+	}
+	if col.RefOnDelete != "" {
+		clause += " ON DELETE " + col.RefOnDelete
+	}
+	if col.RefOnUpdate != "" {
+		clause += " ON UPDATE " + col.RefOnUpdate
+	}
+	return clause
+}
+
+// deferredForeignKeys returns, per table name, the foreign key columns that cannot be
+// declared inline because their target table is created later in the migration. That
+// only happens with cycles; those constraints are added with ALTER TABLE once all tables
+// exist. Self references are fine inline. tables must already be in creation order.
+func deferredForeignKeys(tables []Table) map[string][]Column {
+	position := make(map[string]int, len(tables))
+	for i, table := range tables {
+		position[strings.ToLower(table.Name)] = i
+	}
+	deferred := map[string][]Column{}
+	for i, table := range tables {
+		for _, col := range table.Columns {
+			if col.RefTable == "" || col.RefSchema != "" {
+				continue
+			}
+			j, ok := position[strings.ToLower(col.RefTable)]
+			if ok && j > i {
+				deferred[table.Name] = append(deferred[table.Name], col)
+			}
+		}
+	}
+	return deferred
 }
 
 // relationStructName returns the Go struct name used for a table (singular, CamelCase)

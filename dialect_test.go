@@ -146,7 +146,7 @@ func TestCreateTablePerDialect(t *testing.T) {
 	}
 	for name, fragments := range want {
 		useDialect(t, name)
-		sql := generateCreateTable(table, "")
+		sql := generateCreateTable(table, "", nil)
 		for _, fragment := range fragments {
 			if !strings.Contains(sql, fragment) {
 				t.Errorf("%s: migration is missing %q\n%s", name, fragment, sql)

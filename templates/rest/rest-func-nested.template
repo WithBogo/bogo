@@ -41,7 +41,15 @@ func (h *<struct_name>Handler) <method_name>(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	filters, err := httpHelper.ReadQuery(r, filterQuery)
+	// The path decides the parent, so the foreign key is not read (or validated) from the query
+	pathFilterQuery := make([]httpHelper.QueryInfo, 0, len(filterQuery))
+	for _, info := range filterQuery {
+		if info.DBKey != "<fk_column>" {
+			pathFilterQuery = append(pathFilterQuery, info)
+		}
+	}
+
+	filters, err := httpHelper.ReadQuery(r, pathFilterQuery)
 	if err != nil {
 		log.Error("Failed to retrieve filters ", err.Error())
 		wrapper.Code = http.StatusBadRequest

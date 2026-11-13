@@ -28,10 +28,35 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 	var indexCreations strings.Builder
 	var indexDrops strings.Builder
 
+	// Foreign keys into tables that are created later (cycles) are added afterwards
+	deferred := deferredForeignKeys(tables)
+	if dialect.Name == "sqlite" {
+		// SQLite cannot ALTER TABLE ADD CONSTRAINT, but accepts a REFERENCES to a table
+		// that does not exist yet, so everything stays inline
+		deferred = nil
+	}
+	var constraintCreations strings.Builder
+	var constraintDrops strings.Builder
+
 	for _, table := range tables {
 		// Generate CREATE TABLE statement
-		tableCreations.WriteString(generateCreateTable(table, schema))
+		tableCreations.WriteString(generateCreateTable(table, schema, deferred[table.Name]))
 		tableCreations.WriteString("\n")
+
+		qualifiedName := table.Name
+		if schema != "" {
+			qualifiedName = fmt.Sprintf("%s.%s", schema, table.Name)
+		}
+		for _, col := range deferred[table.Name] {
+			constraint := fmt.Sprintf("fk_%s_%s", table.Name, col.Name)
+			constraintCreations.WriteString(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) %s;\n",
+				qualifiedName, constraint, col.Name, referenceClause(col, schema)))
+			drop := "DROP CONSTRAINT"
+			if dialect.Name == "mysql" {
+				drop = "DROP FOREIGN KEY"
+			}
+			constraintDrops.WriteString(fmt.Sprintf("ALTER TABLE %s %s %s;\n", qualifiedName, drop, constraint))
+		}
 
 		// Generate DROP TABLE statement (reverse order for dependencies)
 		tableName := table.Name
@@ -64,10 +89,10 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 	// Generate migration content
 	vars := map[string]string{
 		"schema_creation": schemaCreation.String(),
-		"table_creations": tableCreations.String(),
+		"table_creations": tableCreations.String() + constraintCreations.String(),
 		"index_creations": indexCreations.String(),
 		"index_drops":     indexDrops.String(),
-		"table_drops":     reversedDrops.String(),
+		"table_drops":     constraintDrops.String() + reversedDrops.String(),
 		"schema_drops":    schemaDrops.String(),
 	}
 
@@ -92,7 +117,7 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 }
 
 // generateCreateTable generates CREATE TABLE SQL for a single table
-func generateCreateTable(table Table, schema string) string {
+func generateCreateTable(table Table, schema string, deferred []Column) string {
 	var sql strings.Builder
 
 	tableName := table.Name
@@ -133,7 +158,13 @@ func generateCreateTable(table Table, schema string) string {
 	// Add table-specific columns
 	for _, col := range table.Columns {
 		sql.WriteString("    ")
-		sql.WriteString(generateColumnDefinition(col, table.Name, schema))
+		inline := true
+		for _, d := range deferred {
+			if d.Name == col.Name {
+				inline = false
+			}
+		}
+		sql.WriteString(generateColumnDefinition(col, table.Name, schema, inline))
 		sql.WriteString(",\n")
 	}
 
@@ -159,7 +190,7 @@ func generateCreateTable(table Table, schema string) string {
 	sql.WriteString(");")
 	return sql.String()
 } // generateColumnDefinition generates SQL column definition
-func generateColumnDefinition(col Column, tableName, schema string) string {
+func generateColumnDefinition(col Column, tableName, schema string, inlineReference bool) string {
 	var def strings.Builder
 
 	def.WriteString(col.Name)
@@ -190,16 +221,9 @@ func generateColumnDefinition(col Column, tableName, schema string) string {
 		def.WriteString(dialect.sqlDefault(col.DefaultValue))
 	}
 
-	if col.RefTable != "" {
-		refTable := col.RefTable
-		if schema != "" {
-			refTable = fmt.Sprintf("%s.%s", schema, refTable)
-		}
-		def.WriteString(" REFERENCES ")
-		def.WriteString(refTable)
-		if col.RefColumn != "" {
-			def.WriteString(fmt.Sprintf("(%s)", col.RefColumn))
-		}
+	if col.RefTable != "" && inlineReference {
+		def.WriteString(" ")
+		def.WriteString(referenceClause(col, schema))
 	}
 
 	return def.String()
