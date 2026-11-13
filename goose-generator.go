@@ -71,7 +71,7 @@ func generateGooseMigration(moduleName string, tables []Table, schema string) er
 		"schema_drops":    schemaDrops.String(),
 	}
 
-	result, err := processTemplate("goose-migration", vars)
+	result, err := processTemplate(dialect.MigrationTemplate, vars)
 	if err != nil {
 		return fmt.Errorf("failed to process goose-migration template: %v", err)
 	}
@@ -127,7 +127,7 @@ func generateCreateTable(table Table, schema string) string {
 
 	// Add missing MetaField columns
 	if !hasID {
-		sql.WriteString("    id BIGSERIAL PRIMARY KEY,\n")
+		sql.WriteString("    " + dialect.idColumn + ",\n")
 	}
 
 	// Add table-specific columns
@@ -139,16 +139,16 @@ func generateCreateTable(table Table, schema string) string {
 
 	// Add missing MetaField columns at the end
 	if !hasCreatedAt {
-		sql.WriteString("    created_at TIMESTAMPTZ DEFAULT NOW(),\n")
+		sql.WriteString("    " + dialect.createdAtColumn + ",\n")
 	}
 	if !hasUpdatedAt {
-		sql.WriteString("    updated_at TIMESTAMPTZ DEFAULT NOW(),\n")
+		sql.WriteString("    " + dialect.updatedAtColumn + ",\n")
 	}
 	if !hasDeletedAt {
-		sql.WriteString("    deleted_at TIMESTAMPTZ,\n")
+		sql.WriteString("    " + dialect.deletedAtColumn + ",\n")
 	}
 	if !hasIsDeleted {
-		sql.WriteString("    is_deleted BOOLEAN DEFAULT FALSE\n")
+		sql.WriteString("    " + dialect.isDeletedColumn + "\n")
 	} else {
 		// Remove the trailing comma from the last column
 		sqlStr := sql.String()
@@ -174,7 +174,7 @@ func generateColumnDefinition(col Column, tableName, schema string) string {
 		// Fallback to mapping from Go type
 		pgType = mapGoTypeToPGType(col.GoType, col.Name)
 	}
-	def.WriteString(pgType)
+	def.WriteString(dialect.sqlType(pgType))
 
 	// Add constraints
 	if col.IsPrimaryKey {
@@ -187,7 +187,7 @@ func generateColumnDefinition(col Column, tableName, schema string) string {
 
 	if col.DefaultValue != "" && !col.IsPrimaryKey {
 		def.WriteString(" DEFAULT ")
-		def.WriteString(col.DefaultValue)
+		def.WriteString(dialect.sqlDefault(col.DefaultValue))
 	}
 
 	if col.RefTable != "" {
@@ -299,8 +299,7 @@ func generateIndexes(table Table, schema string) string {
 			lowerName == "end_ts" {
 
 			indexName := fmt.Sprintf("idx_%s_%s", table.Name, col.Name)
-			indexes.WriteString(fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s%s ON %s(%s);\n",
-				schemaPrefix, indexName, tableName, col.Name))
+			indexes.WriteString(dialect.createIndex(schemaPrefix, indexName, tableName, col))
 		}
 	}
 
@@ -311,8 +310,10 @@ func generateIndexes(table Table, schema string) string {
 func generateDropIndexes(table Table, schema string) string {
 	var drops strings.Builder
 
+	tableName := table.Name
 	schemaPrefix := ""
 	if schema != "" {
+		tableName = fmt.Sprintf("%s.%s", schema, table.Name)
 		schemaPrefix = schema + "."
 	}
 
@@ -328,7 +329,7 @@ func generateDropIndexes(table Table, schema string) string {
 			lowerName == "end_ts" {
 
 			indexName := fmt.Sprintf("idx_%s_%s", table.Name, col.Name)
-			drops.WriteString(fmt.Sprintf("DROP INDEX IF EXISTS %s%s;\n", schemaPrefix, indexName))
+			drops.WriteString(dialect.dropIndex(schemaPrefix, indexName, tableName, col))
 		}
 	}
 

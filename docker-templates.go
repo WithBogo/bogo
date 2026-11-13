@@ -21,7 +21,7 @@ func generateDockerCompose(moduleName string) string {
 		"module_name": moduleName,
 	}
 
-	result, err := processTemplate("docker-compose", variables)
+	result, err := processTemplate(dialect.templateName("docker-compose"), variables)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to process docker-compose template: %v", err))
 	}

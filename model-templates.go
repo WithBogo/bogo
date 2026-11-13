@@ -287,6 +287,10 @@ func generatePostgresRepository(moduleName string, table Table) string {
 		"entity_name_plural": strings.ToLower(structName) + "s",
 		"struct_name":        structName,
 		"entity_param":       strings.ToLower(structName),
+		"db_package":         dialect.Package,
+		"db_display":         dialect.Display,
+		"create_hook":        repositoryCreateHook(table, strings.ToLower(structName)),
+		"update_body":        repositoryUpdateBody(table, structName, strings.ToLower(structName)),
 	}
 
 	result, err := processTemplate("postgres-repository", variables)
