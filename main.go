@@ -6,36 +6,42 @@ import (
 	"strings"
 )
 
-const usage = `Usage: go run . <module-name> <sql-schema-file> [--db=postgres|mysql|sqlite]
+const usage = `Usage: go run . <module-name> <sql-schema-file> [--db=postgres|mysql|sqlite] [--dry-run] [--force]
 
 Flags:
   --db=<name>   Database to generate code for (default: postgres)
+  --dry-run     Show which files would be created, updated or skipped; write nothing
+  --force       Overwrite files even if they were modified after generation
 
-Example: go run . user-service schema.sql --db=mysql`
+Example: go run . user-service schema.sql --db=mysql --dry-run`
 
-// parseArgs splits command line arguments into positional arguments and the selected dialect.
-// Flags are accepted anywhere, so both "svc schema.sql --db=mysql" and "--db=mysql svc schema.sql" work.
-func parseArgs(args []string) (positional []string, selected Dialect, err error) {
-	selected = dialects["postgres"]
+// parseArgs splits command line arguments into positional arguments and options.
+// Flags are accepted anywhere, so both "svc schema.sql --dry-run" and "--dry-run svc schema.sql" work.
+func parseArgs(args []string) (positional []string, opts genOptions, err error) {
+	opts.Dialect = dialects["postgres"]
 
 	for _, arg := range args {
 		switch {
+		case arg == "--dry-run":
+			opts.DryRun = true
+		case arg == "--force":
+			opts.Force = true
 		case strings.HasPrefix(arg, "--db="):
-			selected, err = lookupDialect(strings.TrimPrefix(arg, "--db="))
+			opts.Dialect, err = lookupDialect(strings.TrimPrefix(arg, "--db="))
 			if err != nil {
-				return nil, selected, err
+				return nil, opts, err
 			}
 		case strings.HasPrefix(arg, "--"):
-			return nil, selected, fmt.Errorf("unknown flag %s", arg)
+			return nil, opts, fmt.Errorf("unknown flag %s", arg)
 		default:
 			positional = append(positional, arg)
 		}
 	}
-	return positional, selected, nil
+	return positional, opts, nil
 }
 
 func main() {
-	positional, selected, err := parseArgs(os.Args[1:])
+	positional, opts, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Printf("Error: %v\n\n%s\n", err, usage)
 		os.Exit(1)
@@ -47,17 +53,21 @@ func main() {
 
 	moduleName := positional[0]
 	sqlSchemaFile := positional[1]
-	dialect = selected
+	dialect = opts.Dialect
 
 	fmt.Printf("Creating hexagonal architecture for module: %s\n", moduleName)
 	fmt.Printf("Using SQL schema from: %s\n", sqlSchemaFile)
 	fmt.Printf("Database: %s\n", dialect.Display)
 
-	err = createHexagonalArchitecture(moduleName, sqlSchemaFile)
+	err = createHexagonalArchitecture(moduleName, sqlSchemaFile, opts)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
+	if opts.DryRun {
+		fmt.Printf("Dry run finished for %s, nothing was written.\n", moduleName)
+		return
+	}
 	fmt.Printf("Successfully created %s!\n", moduleName)
 }

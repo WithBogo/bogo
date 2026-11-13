@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -252,17 +251,9 @@ func generateRestConfigFile(table Table, entitySnake string, moduleName string) 
 		panic(fmt.Sprintf("Error marshaling config for %s: %v", entitySnake, err))
 	}
 
-	// Create config directory if it doesn't exist
-	configDir := filepath.Join(moduleName, "config", "rest")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		panic(fmt.Sprintf("Error creating config directory: %v", err))
-	}
-
-	// Write config file
-	configFile := filepath.Join(configDir, entitySnake+".json")
-	if err := os.WriteFile(configFile, jsonData, 0644); err != nil {
+	// Write config file (writeFile creates the directory and protects manual edits)
+	configFile := filepath.Join(moduleName, "config", "rest", entitySnake+".json")
+	if err := writeFile(configFile, string(jsonData)); err != nil {
 		panic(fmt.Sprintf("Error writing config file %s: %v", configFile, err))
 	}
-
-	fmt.Printf("Created REST config: %s\n", configFile)
 }

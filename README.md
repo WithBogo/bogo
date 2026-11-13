@@ -57,6 +57,24 @@ go run . <service-name> <schema-file.sql>
 go run . user-service user_schema.sql
 ```
 
+**Flags** (accepted anywhere on the command line):
+
+| Flag | Effect |
+|------|--------|
+| `--dry-run` | Print which files would be created, updated or skipped, and write nothing |
+| `--force` | Overwrite files even if they were modified after generation |
+
+### **Safe Regeneration**
+
+boGO records a hash of every file it writes in `<service>/.bogo-manifest.json`. When you run it again after changing the schema:
+
+- files you have not touched are updated to match the new schema
+- files you edited by hand are **skipped** and listed, so your changes are never lost (use `--force` to overwrite them)
+- applied migrations are never rewritten, because Goose does not run them again. New tables get a new `..._add_<service>_tables.sql` migration, and a table whose columns changed is reported so you can write the `ALTER TABLE` migration by hand
+
+Commit `.bogo-manifest.json` with your service. Run with `--dry-run` first to preview a regeneration.
+
+
 **What gets generated:**
 - Complete Go microservice with hexagonal architecture
 - REST API with full CRUD operations
@@ -146,7 +164,7 @@ your-service/
 - **API Docs**: OpenAPI 3.0 spec and Swagger UI served by the service
 - **Docker**: Complete containerization with PostgreSQL
 - **Logging**: Structured logging with health checks
-- **Testing**: Mockable interfaces for unit testing
+- **Testing**: Generated unit tests for services and handlers, with mockable interfaces
 
 ## **API Endpoints**
 
@@ -307,6 +325,37 @@ boGO automatically maps SQL types to JSON configuration:
 | `DECIMAL`, `FLOAT` | `"float64"` | `?price=29.99` |
 | `BOOLEAN` | `"bool"` | `?active=true` |
 | `VARCHAR`, `TEXT` | `"string"` | `?name=john` |
+
+### **Request Validation from SQL Constraints**
+
+Constraints in your schema become `validate` tags on the generated DTOs. The handlers already run the validator, so invalid requests get a clear `400` instead of a database error.
+
+| SQL | DTO validation |
+|-----|----------------|
+| `name VARCHAR(50) NOT NULL` | `required,max=50` |
+| `nickname VARCHAR(10)` | `omitempty,max=10` |
+| `age INT CHECK (age >= 18 AND age <= 120)` | `omitempty,gte=18,lte=120` |
+| `status VARCHAR(20) CHECK (status IN ('active', 'banned'))` | `omitempty,max=20,oneof=active banned` |
+| `id UUID` | `omitempty,uuid` |
+
+`required` is only applied to strings and timestamps without a `DEFAULT`, because `0` and `false` are legitimate values for numbers and booleans.
+
+How constraints are mirrored:
+
+- A `CHECK` is mirrored only when the whole expression is understood: comparisons against a number and `IN` lists on that column, joined with `AND`. Anything else (`OR`, other columns, `BETWEEN`) is skipped and left to the database, because a half-understood rule would reject values the database accepts.
+- When several comparisons limit the same side, the strictest wins. On integer columns a fractional limit becomes the equivalent integer one (`rank >= 1.5` is `gte=2`).
+- `IN` lists respect SQL quoting, so `'a,b'` is one value. Commas and pipes are escaped for the validator. A list with a value that cannot be written into a tag (a quote, backtick or backslash) is skipped entirely.
+- An optional number whose rules reject `0` (for example `age INT CHECK (age >= 18)`) is a pointer in the DTO, so a missing field is accepted but an explicit `0` is rejected. Responses for such fields now include the value, even `0`, instead of omitting it.
+- A mandatory number that rejects `0` is validated even when it is missing.
+
+### **Generated Tests**
+
+Every service gets tests out of the box, using hand-written mocks and only the standard library:
+
+- `internal/application/<entity>_service_test.go` covers the service against a mock repository
+- `internal/interactor/rest/<table>_handler_test.go` covers the handlers with `httptest`, including a request that violates the validation rules
+
+Run them with `go test ./...`.
 
 ### **Configuration Benefits**
 

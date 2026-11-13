@@ -16,8 +16,8 @@ type <plural_name> []<dto_struct_name>
 func (d *<dto_struct_name>) Marshal() (model.<struct_name>, error) {
 	domainModel := model.<struct_name>{
 		MetaField: model.MetaField{ID: d.ID},<marshal_fields>
-	}
-	
+	}<marshal_pointer_fields>
+
 	return domainModel, nil
 }
 

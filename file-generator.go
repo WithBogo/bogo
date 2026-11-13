@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -51,6 +50,11 @@ func generateAllFiles(moduleName string, tables []Table) error {
 
 	// Generate REST API
 	if err := generateRestAPI(moduleName, tables); err != nil {
+		return err
+	}
+
+	// Generate unit tests for services and REST handlers
+	if err := generateTests(moduleName, tables); err != nil {
 		return err
 	}
 
@@ -109,7 +113,6 @@ func generateBaseFiles(moduleName string, tables []Table) error {
 		if err := writeFile(filePath, content); err != nil {
 			return err
 		}
-		fmt.Printf("Created: %s\n", filePath)
 	}
 
 	return nil
@@ -124,7 +127,6 @@ func generateDomainModels(moduleName string, tables []Table) error {
 		if err := writeFile(modelFile, modelContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created domain model: %s\n", modelFile)
 	}
 	return nil
 }
@@ -141,7 +143,6 @@ func generateUnifiedApplicationInterfacesFile(moduleName string, tables []Table)
 	if err := writeFile(interfaceFile, interfaceContent); err != nil {
 		return err
 	}
-	fmt.Printf("Created unified application interfaces: %s\n", interfaceFile)
 	return nil
 }
 
@@ -154,7 +155,6 @@ func generateApplicationInterfaces(moduleName string, tables []Table) error {
 		if err := writeFile(interfaceFile, interfaceContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created application interface: %s\n", interfaceFile)
 	}
 	return nil
 }
@@ -173,7 +173,6 @@ func generateApplicationServices(moduleName string, tables []Table) error {
 		if err := writeFile(serviceFile, serviceContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created application service: %s\n", serviceFile)
 	}
 	return nil
 }
@@ -192,7 +191,6 @@ func generateDTOs(moduleName string, tables []Table) error {
 		if err := writeFile(dtoFile, dtoContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created DTO: %s\n", dtoFile)
 	}
 	return nil
 }
@@ -209,7 +207,6 @@ func generateUnifiedInteractorInterfacesFile(moduleName string, tables []Table) 
 	if err := writeFile(interfaceFile, interfaceContent); err != nil {
 		return err
 	}
-	fmt.Printf("Created unified interactor interfaces: %s\n", interfaceFile)
 	return nil
 }
 
@@ -222,7 +219,6 @@ func generateInteractorServices(moduleName string, tables []Table) error {
 		if err := writeFile(serviceFile, serviceContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created interactor service: %s\n", serviceFile)
 	}
 	return nil
 }
@@ -241,7 +237,6 @@ func generateInteractorAdapters(moduleName string, tables []Table) error {
 		if err := writeFile(adapterFile, adapterContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created interactor adapter: %s\n", adapterFile)
 	}
 	return nil
 }
@@ -255,7 +250,6 @@ func generateRepositoryImplementations(moduleName string, tables []Table) error 
 		if err := writeFile(repoFile, repoContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created repository implementation: %s\n", repoFile)
 	}
 	return nil
 }
@@ -269,7 +263,6 @@ func generateRestAPI(moduleName string, tables []Table) error {
 	if err := writeFile(restFile, restContent); err != nil {
 		return err
 	}
-	fmt.Printf("Created REST API: %s\n", restFile)
 
 	// Generate REST parameter file
 	parameterContent := generateRestParameter(moduleName, tables)
@@ -278,7 +271,6 @@ func generateRestAPI(moduleName string, tables []Table) error {
 	if err := writeFile(parameterFile, parameterContent); err != nil {
 		return err
 	}
-	fmt.Printf("Created REST parameters: %s\n", parameterFile)
 
 	// Generate individual handlers for each table
 	for _, table := range tables {
@@ -288,40 +280,17 @@ func generateRestAPI(moduleName string, tables []Table) error {
 		if err := writeFile(handlerFile, handlerContent); err != nil {
 			return err
 		}
-		fmt.Printf("Created REST handler: %s\n", handlerFile)
 	}
 
 	return nil
 }
 
-// writeFile writes content to a file, creating directories as needed
+// writeFile writes generated content to a file, honoring --dry-run and protecting manual edits
 func writeFile(filePath, content string) error {
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-
-	// Write file
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write file %s: %v", filePath, err)
-	}
-
-	return nil
+	return writeManagedFile(filePath, content, 0644)
 }
 
-// writeExecutableFile writes content to an executable file, creating directories as needed
+// writeExecutableFile writes generated content to an executable file
 func writeExecutableFile(filePath, content string) error {
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-
-	// Write file with executable permissions
-	if err := os.WriteFile(filePath, []byte(content), 0755); err != nil {
-		return fmt.Errorf("failed to write executable file %s: %v", filePath, err)
-	}
-
-	return nil
+	return writeManagedFile(filePath, content, 0755)
 }
