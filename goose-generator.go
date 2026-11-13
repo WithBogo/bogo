@@ -284,7 +284,7 @@ func generateIndexes(table Table, schema string) string {
 			lowerName == "end_ts" {
 
 			indexName := fmt.Sprintf("idx_%s_%s", table.Name, col.Name)
-			indexes.WriteString(dialect.createIndex(schemaPrefix, indexName, tableName, col.Name))
+			indexes.WriteString(dialect.createIndex(schemaPrefix, indexName, tableName, col))
 		}
 	}
 
@@ -314,7 +314,7 @@ func generateDropIndexes(table Table, schema string) string {
 			lowerName == "end_ts" {
 
 			indexName := fmt.Sprintf("idx_%s_%s", table.Name, col.Name)
-			drops.WriteString(dialect.dropIndex(schemaPrefix, indexName, tableName))
+			drops.WriteString(dialect.dropIndex(schemaPrefix, indexName, tableName, col))
 		}
 	}
 

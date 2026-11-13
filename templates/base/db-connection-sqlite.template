@@ -3,6 +3,7 @@ package sqlite
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	log "github.com/sirupsen/logrus"
@@ -12,7 +13,9 @@ import (
 // Connect opens a SQLite database. SQLite is file based, so only the database path is
 // used and host, port and credentials are ignored.
 func Connect(host, database string, port int, username, password string) (db *gorm.DB, err error) {
-	if dir := filepath.Dir(database); dir != "." {
+	database = resolvePath(database)
+
+	if dir := filepath.Dir(database); dir != "." && !strings.HasPrefix(database, "file:") {
 		if err = os.MkdirAll(dir, 0o755); err != nil {
 			log.Error(err.Error())
 			return nil, err
@@ -27,4 +30,28 @@ func Connect(host, database string, port int, username, password string) (db *go
 
 	log.Info("DB Connected")
 	return db, err
+}
+
+// resolvePath anchors a relative database path at the project root, the nearest parent
+// folder holding go.mod. The service is usually started from cmd/<service> while goose
+// runs from the project root, and both must end up using the same file. Absolute paths,
+// :memory: and file: URIs are used as given, and so is a relative path when no project
+// root is found (for example in a container).
+func resolvePath(database string) string {
+	if filepath.IsAbs(database) || database == ":memory:" || strings.HasPrefix(database, "file:") {
+		return database
+	}
+
+	dir, err := os.Getwd()
+	for err == nil {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return filepath.Join(dir, database)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return database
 }

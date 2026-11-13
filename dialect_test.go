@@ -71,15 +71,65 @@ func TestSQLDefault(t *testing.T) {
 	}
 }
 
+func TestSQLDefault_DropsPostgresCasts(t *testing.T) {
+	cases := []struct{ dialect, in, want string }{
+		{"mysql", "'active'::text", "'active'"},
+		{"mysql", "'active'::character", "'active'"},
+		{"sqlite", "0::bigint", "0"},
+		{"mysql", "NOW()::timestamp", "CURRENT_TIMESTAMP(6)"},
+		{"postgres", "'active'::text", "'active'::text"},
+	}
+	for _, c := range cases {
+		if got := dialects[c.dialect].sqlDefault(c.in); got != c.want {
+			t.Errorf("%s %s: got %q, want %q", c.dialect, c.in, got, c.want)
+		}
+	}
+}
+
 func TestIndexStatements(t *testing.T) {
-	if got := dialects["mysql"].createIndex("", "idx_a", "a", "x"); strings.Contains(got, "IF NOT EXISTS") {
+	plain := Column{Name: "x", Type: "BIGINT"}
+
+	if got := dialects["mysql"].createIndex("", "idx_a", "a", plain); strings.Contains(got, "IF NOT EXISTS") {
 		t.Errorf("MySQL has no IF NOT EXISTS for indexes: %s", got)
 	}
-	if got := dialects["mysql"].dropIndex("", "idx_a", "a"); got != "DROP INDEX idx_a ON a;\n" {
+	if got := dialects["mysql"].dropIndex("", "idx_a", "a", plain); got != "DROP INDEX idx_a ON a;\n" {
 		t.Errorf("MySQL drop must name the table: %q", got)
 	}
-	if got := dialects["postgres"].dropIndex("s.", "idx_a", "s.a"); got != "DROP INDEX IF EXISTS s.idx_a;\n" {
+	if got := dialects["postgres"].dropIndex("s.", "idx_a", "s.a", plain); got != "DROP INDEX IF EXISTS s.idx_a;\n" {
 		t.Errorf("unexpected postgres drop: %q", got)
+	}
+}
+
+func TestIndexStatements_MySQLTextColumns(t *testing.T) {
+	text := Column{Name: "session_id", Type: "TEXT"}
+	if got := dialects["mysql"].createIndex("", "idx_a_session_id", "a", text); !strings.Contains(got, "session_id(191)") {
+		t.Errorf("MySQL cannot index TEXT without a prefix length: %q", got)
+	}
+	if got := dialects["postgres"].createIndex("", "idx_a_session_id", "a", text); strings.Contains(got, "(191)") {
+		t.Errorf("only MySQL needs a prefix length: %q", got)
+	}
+
+	json := Column{Name: "payload_id", Type: "JSONB"}
+	if got := dialects["mysql"].createIndex("", "i", "a", json); got != "" {
+		t.Errorf("JSON columns cannot be indexed on MySQL: %q", got)
+	}
+	if got := dialects["mysql"].dropIndex("", "i", "a", json); got != "" {
+		t.Errorf("the drop must be skipped together with the create: %q", got)
+	}
+}
+
+func TestSmallIntegerColumnsAreIntegers(t *testing.T) {
+	for _, sqlType := range []string{"SMALLINT", "TINYINT", "MEDIUMINT", "SMALLSERIAL", "INT4", "BIGINT"} {
+		col := Column{Name: "version", Type: sqlType, IsNullable: true}
+		generateGoFieldInfo(&col)
+		if col.GoType != "int64" {
+			t.Errorf("%s must map to int64, got %s", sqlType, col.GoType)
+		}
+	}
+
+	table := Table{Name: "docs", Columns: []Column{{Name: "version", Type: "SMALLINT", GoType: "int64"}}}
+	if _, ok := versionColumn(table); !ok {
+		t.Error("a SMALLINT version column must enable optimistic locking")
 	}
 }
 

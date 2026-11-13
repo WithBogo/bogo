@@ -322,7 +322,9 @@ go run . user-service user_schema.sql --db=sqlite
 
 Your schema file stays PostgreSQL flavoured. Types are translated for the target database, for example `BIGSERIAL` becomes `BIGINT AUTO_INCREMENT` on MySQL and `INTEGER` on SQLite, `TIMESTAMPTZ` becomes `DATETIME(6)` or `TIMESTAMP`, `JSONB` becomes `JSON` or `TEXT`, and `DEFAULT NOW()` becomes `CURRENT_TIMESTAMP`. The generated README of each service lists the exact commands and defaults for its database.
 
-For SQLite, `DB_NAME` is the path of the database file (default `data/<service>.db`) and the host, port and credentials are ignored.
+For SQLite, `DB_NAME` is the path of the database file (default `data/<service>.db`) and the host, port and credentials are ignored. A relative path is resolved from the project root (the folder holding `go.mod`), so the service and `goose` use the same file even though the service is usually started from `cmd/<service>`.
+
+On MySQL, indexes on `TEXT` columns get a 191 character prefix and `JSON` columns are not indexed, because MySQL cannot index them in full. PostgreSQL casts in defaults, such as `'active'::text`, are dropped for MySQL and SQLite.
 
 ## **Environment Variables**
 

@@ -159,8 +159,15 @@ func (d Dialect) sqlType(sqlType string) string {
 	return sqlType
 }
 
-// sqlDefault translates a DEFAULT expression
+// sqlDefault translates a DEFAULT expression. PostgreSQL casts such as 'active'::text are
+// invalid on the other databases, so the cast is dropped and the value is kept.
 func (d Dialect) sqlDefault(expr string) string {
+	if d.Name != "postgres" {
+		if i := strings.Index(expr, "::"); i >= 0 {
+			expr = expr[:i]
+		}
+	}
+
 	if strings.EqualFold(expr, "NOW()") {
 		switch d.Name {
 		case "mysql":
@@ -172,16 +179,54 @@ func (d Dialect) sqlDefault(expr string) string {
 	return expr
 }
 
-// createIndex renders a CREATE INDEX statement. MySQL has no IF NOT EXISTS for indexes.
-func (d Dialect) createIndex(schemaPrefix, indexName, tableName, column string) string {
-	if d.Name == "mysql" {
-		return fmt.Sprintf("CREATE INDEX %s ON %s(%s);\n", indexName, tableName, column)
+// mysqlPrefixLength is the key prefix used to index TEXT and BLOB columns on MySQL, which
+// cannot index them in full. 191 characters fit the 767 byte key limit of older row formats.
+const mysqlPrefixLength = 191
+
+// indexExpr returns what to put between the parentheses of CREATE INDEX for a column,
+// or "" when the column cannot be indexed on this dialect
+func (d Dialect) indexExpr(col Column) string {
+	if d.Name != "mysql" {
+		return col.Name
 	}
-	return fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s%s ON %s(%s);\n", schemaPrefix, indexName, tableName, column)
+
+	switch baseSQLType(d.sqlType(col.Type)) {
+	case "TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT", "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB":
+		return fmt.Sprintf("%s(%d)", col.Name, mysqlPrefixLength)
+	case "JSON":
+		return ""
+	}
+	return col.Name
 }
 
-// dropIndex renders a DROP INDEX statement. MySQL needs the table and has no IF EXISTS.
-func (d Dialect) dropIndex(schemaPrefix, indexName, tableName string) string {
+// baseSQLType returns the upper case type name without size or modifiers
+func baseSQLType(sqlType string) string {
+	base := strings.ToUpper(strings.TrimSpace(sqlType))
+	if i := strings.IndexAny(base, "( "); i >= 0 {
+		base = base[:i]
+	}
+	return base
+}
+
+// createIndex renders a CREATE INDEX statement, or "" for a column that cannot be indexed.
+// MySQL has no IF NOT EXISTS for indexes.
+func (d Dialect) createIndex(schemaPrefix, indexName, tableName string, col Column) string {
+	expr := d.indexExpr(col)
+	if expr == "" {
+		return ""
+	}
+	if d.Name == "mysql" {
+		return fmt.Sprintf("CREATE INDEX %s ON %s(%s);\n", indexName, tableName, expr)
+	}
+	return fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s%s ON %s(%s);\n", schemaPrefix, indexName, tableName, expr)
+}
+
+// dropIndex renders a DROP INDEX statement, or "" for a column createIndex skipped.
+// MySQL needs the table and has no IF EXISTS.
+func (d Dialect) dropIndex(schemaPrefix, indexName, tableName string, col Column) string {
+	if d.indexExpr(col) == "" {
+		return ""
+	}
 	if d.Name == "mysql" {
 		return fmt.Sprintf("DROP INDEX %s ON %s;\n", indexName, tableName)
 	}
