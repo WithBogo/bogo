@@ -87,7 +87,7 @@ func createDirectoryStructure(moduleName string) error {
 
 		// Repository layer
 		filepath.Join(moduleName, "internal", "repository"),
-		filepath.Join(moduleName, "internal", "repository", "implementor", "postgres"),
+		filepath.Join(moduleName, "internal", "repository", "implementor", dialect.Package),
 		filepath.Join(moduleName, "internal", "repository", "implementor", "cache"),
 
 		// Package dependencies

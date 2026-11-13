@@ -140,7 +140,7 @@ your-service/
 
 - **REST API**: Complete CRUD operations for all tables
 - **JSON Configuration**: Runtime-configurable query parameters and sorting
-- **Database**: PostgreSQL with GORM, migrations with Goose
+- **Database**: PostgreSQL, MySQL or SQLite with GORM, migrations with Goose
 - **Architecture**: Clean hexagonal architecture with dependency inversion
 - **Validation**: Request validation and error handling
 - **Docker**: Complete containerization with PostgreSQL
@@ -262,6 +262,29 @@ vim config/rest/user.json
 }
 ```
 
+### **Soft Delete and Optimistic Locking**
+
+**Soft delete** is always on. `DELETE /users/:id` keeps the row and sets `is_deleted = true` and `deleted_at`. Deleted rows are invisible to every endpoint: reading, updating or deleting one returns `404`, and an update can never bring a deleted row back.
+
+**Optimistic locking** is opt-in. Add an integer `version` column and concurrent edits can no longer overwrite each other silently:
+
+```sql
+CREATE TABLE accounts (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 1
+);
+```
+
+```bash
+# Read the account, note its version, then send it back with the update
+curl http://localhost:8080/accounts/1            # {"id":1,"name":"alice","version":1}
+curl -X PUT http://localhost:8080/accounts/1 -d '{"name":"alice b","version":1}'   # 200, version is now 2
+curl -X PUT http://localhost:8080/accounts/1 -d '{"name":"alice c","version":1}'   # 409 Conflict
+```
+
+An update only succeeds if the `version` you send is the current one, and the version is bumped in the same SQL statement, so two writers can never both win. Omitting `version` is treated as a stale write and returns `409`.
+
 ### **SQL Type Mapping**
 
 boGO automatically maps SQL types to JSON configuration:
@@ -281,6 +304,27 @@ boGO automatically maps SQL types to JSON configuration:
 ✅ **Maintainability** - Human-readable JSON format  
 ✅ **Version Control** - Easy to track configuration changes  
 ✅ **Environment-Specific** - Different configs for dev/staging/prod  
+
+## **Choosing a Database**
+
+PostgreSQL is the default. Pass `--db` to generate for another database:
+
+```bash
+go run . user-service user_schema.sql --db=mysql
+go run . user-service user_schema.sql --db=sqlite
+```
+
+| `--db` | Driver | Repository package | Docker Compose | Migrations |
+|--------|--------|--------------------|----------------|------------|
+| `postgres` (default) | `gorm.io/driver/postgres` | `implementor/postgres` | PostgreSQL 15, migrations applied on first start | Goose |
+| `mysql` | `gorm.io/driver/mysql` | `implementor/mysql` | MySQL 8.0 | Goose, run `goose ... mysql` |
+| `sqlite` | `github.com/glebarez/sqlite` (pure Go, no CGO) | `implementor/sqlite` | App only, database file in `./data` | Goose, run `goose ... sqlite3` |
+
+Your schema file stays PostgreSQL flavoured. Types are translated for the target database, for example `BIGSERIAL` becomes `BIGINT AUTO_INCREMENT` on MySQL and `INTEGER` on SQLite, `TIMESTAMPTZ` becomes `DATETIME(6)` or `TIMESTAMP`, `JSONB` becomes `JSON` or `TEXT`, and `DEFAULT NOW()` becomes `CURRENT_TIMESTAMP`. The generated README of each service lists the exact commands and defaults for its database.
+
+For SQLite, `DB_NAME` is the path of the database file (default `data/<service>.db`) and the host, port and credentials are ignored. A relative path is resolved from the project root (the folder holding `go.mod`), so the service and `goose` use the same file even though the service is usually started from `cmd/<service>`.
+
+On MySQL, indexes on `TEXT` columns get a 191 character prefix and `JSON` columns are not indexed, because MySQL cannot index them in full. PostgreSQL casts in defaults, such as `'active'::text`, are dropped for MySQL and SQLite.
 
 ## **Environment Variables**
 

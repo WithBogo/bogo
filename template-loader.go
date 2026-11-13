@@ -50,13 +50,18 @@ func getTemplateDirectory(templateName string) string {
 		"readme":            "base",
 		"config":            "base",
 		"db-connection":     "base",
+		"db-connection-mysql":  "base",
+		"db-connection-sqlite": "base",
 
 		// Migration templates
-		"goose-migration": "migration",
+		"goose-migration":       "migration",
+		"goose-migration-plain": "migration",
 
 		// Docker templates
 		"dockerfile":                  "docker",
 		"docker-compose":              "docker",
+		"docker-compose-mysql":        "docker",
+		"docker-compose-sqlite":       "docker",
 		"build-script":                "docker",
 		"build-script-windows":        "docker",
 		"build-script-cross-platform": "docker",

@@ -11,7 +11,7 @@ git clone <repository-url>
 
 ### Option 1: Docker Compose (Recommended)
 ```bash
-# Start the service with PostgreSQL database
+# Start the service with <db_display> database
 docker-compose up -d
 
 # View logs
@@ -23,7 +23,7 @@ docker-compose down
 
 ### Option 2: Local Development
 ```bash
-# Make sure PostgreSQL is running locally
+# Make sure <db_display> is running locally
 # Update environment variables if needed
 
 cd cmd/<module_name>
@@ -48,7 +48,7 @@ Using Clean Code Architectural Approach, specifically adopting Netflix's Hexagon
 │   │   └── grpc    // gRPC implementation (placeholder)
 │   └── repository
 │       └── implementor
-│           └── postgres // PostgreSQL implementations
+│           └── <db_package> // <db_display> implementations
 ├── pkg             // shared packages
 ├── script          // bash script directory
 └── build           // build artifacts
@@ -57,14 +57,14 @@ Using Clean Code Architectural Approach, specifically adopting Netflix's Hexagon
 ## Database Setup
 
 ### Automatic Setup (Docker)
-When using `docker-compose up`, the PostgreSQL database is automatically:
+When using `docker-compose up`, the <db_display> database is automatically:
 - 🎯 Created with the correct database name
-- 📋 Initialized with your SQL schema via migration files  
+<db_init_line>
 - 🔗 Ready to receive connections from the service
-- 🏥 Health checked to ensure proper startup order
+- 🏥 Health checked to ensure proper startup order<db_migrate_note>
 
-### Manual Setup (Local PostgreSQL)
-If running PostgreSQL locally:
+### Manual Setup (Local <db_display>)
+If running <db_display> locally:
 ```sql
 CREATE DATABASE <module_name>;
 -- Apply migrations from the migrations/ folder
@@ -74,21 +74,21 @@ CREATE DATABASE <module_name>;
 
 ### Docker (Pre-configured in docker-compose.yml)
 ```bash
-DB_HOST=db                    # PostgreSQL container
-DB_NAME=<module_name>         # Database name  
-DB_USER=postgres              # Database user
-DB_PWD=postgres               # Database password
-DB_PORT=5432                  # Database port
+DB_HOST=db                    # <db_display> container
+DB_NAME=<db_name_default>         # Database name  
+DB_USER=<db_user_default>              # Database user
+DB_PWD=<db_password_default>               # Database password
+DB_PORT=<db_port_default>                  # Database port
 SVC_PORT=8080                 # Service port
 ```
 
 ### Local Development
 ```bash
 DB_HOST=localhost
-DB_NAME=<module_name>
-DB_USER=postgres
-DB_PWD=postgres
-DB_PORT=5432
+DB_NAME=<db_name_default>
+DB_USER=<db_user_default>
+DB_PWD=<db_password_default>
+DB_PORT=<db_port_default>
 SVC_PORT=8080
 DEBUG_MODE=debug
 LOG_ADDRESS=localhost:12201
@@ -99,7 +99,7 @@ LOG_MODE=local
 
 ### Start Everything
 ```bash
-# Build and start service + PostgreSQL
+# Build and start service + <db_display>
 docker-compose up --build
 
 # Or start in background
@@ -111,8 +111,8 @@ docker-compose up -d
 # View logs
 docker-compose logs -f
 
-# Access PostgreSQL directly
-docker-compose exec db psql -U postgres -d <module_name>
+# Access <db_display> directly
+<db_shell_command>
 
 # Rebuild after code changes
 docker-compose up --build

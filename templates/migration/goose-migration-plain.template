@@ -1,0 +1,9 @@
+-- +goose Up
+<schema_creation>
+<table_creations>
+<index_creations>
+
+-- +goose Down
+<index_drops>
+<table_drops>
+<schema_drops>
