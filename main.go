@@ -6,23 +6,31 @@ import (
 	"strings"
 )
 
-const usage = `Usage: go run . <module-name> <sql-schema-file> [--dry-run] [--force]
+const usage = `Usage: go run . <module-name> <sql-schema-file> [--db=postgres|mysql|sqlite] [--dry-run] [--force]
 
 Flags:
-  --dry-run   Show which files would be created, updated or skipped; write nothing
-  --force     Overwrite files even if they were modified after generation
+  --db=<name>   Database to generate code for (default: postgres)
+  --dry-run     Show which files would be created, updated or skipped; write nothing
+  --force       Overwrite files even if they were modified after generation
 
-Example: go run . user-service schema.sql --dry-run`
+Example: go run . user-service schema.sql --db=mysql --dry-run`
 
 // parseArgs splits command line arguments into positional arguments and options.
 // Flags are accepted anywhere, so both "svc schema.sql --dry-run" and "--dry-run svc schema.sql" work.
 func parseArgs(args []string) (positional []string, opts genOptions, err error) {
+	opts.Dialect = dialects["postgres"]
+
 	for _, arg := range args {
 		switch {
 		case arg == "--dry-run":
 			opts.DryRun = true
 		case arg == "--force":
 			opts.Force = true
+		case strings.HasPrefix(arg, "--db="):
+			opts.Dialect, err = lookupDialect(strings.TrimPrefix(arg, "--db="))
+			if err != nil {
+				return nil, opts, err
+			}
 		case strings.HasPrefix(arg, "--"):
 			return nil, opts, fmt.Errorf("unknown flag %s", arg)
 		default:
@@ -45,9 +53,11 @@ func main() {
 
 	moduleName := positional[0]
 	sqlSchemaFile := positional[1]
+	dialect = opts.Dialect
 
 	fmt.Printf("Creating hexagonal architecture for module: %s\n", moduleName)
 	fmt.Printf("Using SQL schema from: %s\n", sqlSchemaFile)
+	fmt.Printf("Database: %s\n", dialect.Display)
 
 	err = createHexagonalArchitecture(moduleName, sqlSchemaFile, opts)
 	if err != nil {

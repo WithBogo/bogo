@@ -18,8 +18,9 @@ const manifestFileName = ".bogo-manifest.json"
 
 // genOptions are the command line switches that control how files are written
 type genOptions struct {
-	DryRun bool // report what would happen without touching the disk
-	Force  bool // overwrite files even if they were modified after generation
+	DryRun  bool    // report what would happen without touching the disk
+	Force   bool    // overwrite files even if they were modified after generation
+	Dialect Dialect // database to generate code for
 }
 
 type manifestFile struct {

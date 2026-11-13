@@ -174,7 +174,7 @@ func generateGoFieldInfo(column *Column) {
 	baseType := regexp.MustCompile(`^([A-Z]+)`).FindString(sqlType)
 
 	switch baseType {
-	case "INT", "INTEGER", "SERIAL", "BIGSERIAL", "BIGINT":
+	case "INT", "INTEGER", "SERIAL", "BIGSERIAL", "BIGINT", "SMALLINT", "SMALLSERIAL", "TINYINT", "MEDIUMINT":
 		if column.IsPrimaryKey {
 			column.GoType = "int64"
 		} else {
